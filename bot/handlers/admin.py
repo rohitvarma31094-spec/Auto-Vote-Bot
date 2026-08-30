@@ -1,6 +1,5 @@
 from aiogram import Router, types
 from aiogram.filters import Command
-from aiogram.types import ReplyParameters
 from config import Config
 from database.queries import get_accounts_by_user, get_all_accounts, set_admin, add_user, get_all_admins, is_admin
 from utils.text_formatter import format_account_list, premium_text
@@ -18,7 +17,6 @@ async def check_user_cmd(message: types.Message):
         if len(parts) > 1:
             try:
                 user_id = int(parts[1])
-                # Fetch user from DB or assume
                 target_user = types.User(id=user_id, first_name="User", username=None)
             except:
                 pass
