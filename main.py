@@ -136,7 +136,7 @@ def save_scheduled():
 # ══════════════════════════════════════════════════════════
 
 def is_owner(uid):
-    return uid == config.OWNER_ID
+    return uid in config.OWNER_IDS
 
 def is_admin(uid):
     return is_owner(uid) or uid in admins
