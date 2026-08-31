@@ -23,16 +23,16 @@ from telethon.tl.functions.messages import (
 )
 from telethon.tl.functions.channels import (
     JoinChannelRequest, LeaveChannelRequest, GetFullChannelRequest,
-    GetParticipantRequest, GetMessagesRequest
+    GetParticipantRequest
 )
 from telethon.tl.functions.contacts import ResolveUsernameRequest
 from telethon.tl.types import (
     PeerChannel, ReactionEmoji, InputPeerChannel,
     MessageEntityTextUrl, Channel, Chat, ChannelParticipant,
     ChannelParticipantBanned, ChannelParticipantCreator,
-    ChannelParticipantAdmin, Message, MessageService
+    ChannelParticipantAdmin, Message, MessageService, ChannelFull
 )
-from telethon.tl.types.messages import ChannelFull
+from telethon.tl.functions import channels
 
 import config
 
