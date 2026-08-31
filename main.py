@@ -91,8 +91,14 @@ def jsave(path, data):
         os.replace(tmp, path)
 
 accounts  = jload(config.ACCOUNTS_FILE, [])
-# Admins ab list of dicts honge: [{"id": 123, "limit": 100}, ...]
-admins    = jload(config.ADMINS_FILE, []) 
+# Load admins as list of dicts
+raw_admins = jload(config.ADMINS_FILE, [])
+admins = []
+for a in raw_admins:
+    if isinstance(a, int):  # Purana format (sirf ID)
+        admins.append({"id": a, "limit": 0})  # 0 = Unlimited
+    else:  # Naya format (dict)
+        admins.append(a)
 settings  = jload(config.SETTINGS_FILE, {})
 campaigns = jload(config.CAMPAIGNS_FILE, [])
 
@@ -675,7 +681,7 @@ async def cb(e):
         return await e.edit(menu_text(uid), buttons=MAIN_MENU, parse_mode="md")
 
     # ── Owner Panel (Owner Only) ──
-     if data == "owner_panel":
+    if data == "owner_panel":
         if not is_owner(uid):
             return await e.answer("⛔ Owner Only!", alert=True)
         total_users = len(set(a.get("owner") for a in accounts))
@@ -725,7 +731,6 @@ async def cb(e):
             
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
-
     # ── My Status (With Expired details) ──
     if data == "mystat":
         total, active, expired, user_accs = await check_status(uid)
