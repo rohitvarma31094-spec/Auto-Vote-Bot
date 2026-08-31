@@ -91,7 +91,8 @@ def jsave(path, data):
         os.replace(tmp, path)
 
 accounts  = jload(config.ACCOUNTS_FILE, [])
-admins    = jload(config.ADMINS_FILE, [])
+# Admins ab list of dicts honge: [{"id": 123, "limit": 100}, ...]
+admins    = jload(config.ADMINS_FILE, []) 
 settings  = jload(config.SETTINGS_FILE, {})
 campaigns = jload(config.CAMPAIGNS_FILE, [])
 
@@ -126,21 +127,32 @@ def is_owner(uid):
     return uid in config.OWNER_IDS
 
 def is_admin(uid):
-    return is_owner(uid) or uid in admins
+    return is_owner(uid) or uid in [a['id'] for a in admins]
 
 def get_user_limit(uid):
-    # Owner = Unlimited, Admin = Limit from config
     if is_owner(uid):
         return float('inf')
-    if is_admin(uid):
-        return getattr(config, 'ADMIN_ACCOUNT_LIMIT', 100)
+    
+    # Admin check karo
+    admin_data = next((a for a in admins if a['id'] == uid), None)
+    if admin_data:
+        # Limit 0 hai toh Unlimited
+        if admin_data.get('limit', 0) == 0:
+            return float('inf')
+        else:
+            return int(admin_data.get('limit', 0))
     return 0
 
 def my_accounts(uid, limit=None):
     user_accs = [a for a in accounts if a.get("owner") == uid]
     if limit is None:
         limit = get_user_limit(uid)
-    return user_accs[:limit]
+    
+    # Fix: Agar limit infinity hai, toh saare accounts return karo
+    if limit == float('inf') or limit is None:
+        return user_accs
+    else:
+        return user_accs[:int(limit)]
 
 def get_total_accounts():
     return len(accounts)
@@ -199,22 +211,27 @@ async def validate_session_string(s, owner):
         raise ValueError("Session expired / not authorized")
     return await save_session_account(c, owner)
 
+# ==========================================================
+#  UPDATED CHECK_STATUS (Returns 4 values for full report)
+# ==========================================================
+
 async def check_status(uid):
-    user_accs = my_accounts(uid)
+    # User ke saare accounts (limit mat lagao, full list lo)
+    user_accs = [a for a in accounts if a.get("owner") == uid]
     total = len(user_accs)
     active, expired = 0, []
     
     for a in user_accs:
         c = await get_client(a)
         if c is None:
-            expired.append(f"{a['phone']} ({a.get('name','?')}) - Session Expired")
+            expired.append(a)  # Store full account object
         else:
             try:
                 await c.get_me()
                 active += 1
             except Exception as e:
-                expired.append(f"{a['phone']} ({a.get('name','?')}) - {str(e)[:20]}")
-    return total, active, expired
+                expired.append(a)  # Store full account object
+    return total, active, expired, user_accs
 
 # ==========================================================
 #  PARSING & ENTITY RESOLUTION
@@ -521,36 +538,88 @@ async def cmd_start(e):
 
 @bot.on(events.NewMessage(pattern="^/me$"))
 async def cmd_me(e):
-    total, active, expired = await check_status(e.sender_id)
+    total, active, expired, user_accs = await check_status(e.sender_id)
     await e.reply(f"{PremiumEmojis.ID} **My Profile**\n"
                   f"ID: `{e.sender_id}`\nAccounts: {total} | Active: {active} | Expired: {len(expired)}", parse_mode="md")
+
+@bot.on(events.NewMessage(pattern="^/check$"))
+async def cmd_check(e):
+    uid = e.sender_id
+    total, active, expired, user_accs = await check_status(uid)
+    
+    lines = []
+    lines.append(f"📋 **Account Report**")
+    lines.append(f"👤 User ID: `{uid}`")
+    lines.append(f"➖➖➖➖➖➖➖➖➖➖➖")
+    lines.append(f"👥 **Total Added:** {total}")
+    lines.append(f"🟢 **Live/Active:** {active}")
+    lines.append(f"🔴 **Expired/Failed:** {len(expired)}")
+    
+    if user_accs:
+        lines.append("\n🗂️ **Full Account List:**")
+        for acc in user_accs:
+            c = clients.get(acc["phone"])
+            if c and c.is_connected():
+                lines.append(f"🟢 `{acc['phone']}` — {acc.get('name', '?')}")
+            else:
+                lines.append(f"🔴 `{acc['phone']}` — {acc.get('name', '?')} (Expired)")
+    
+    if expired:
+        lines.append("\n❌ **Expired Account Details:**")
+        for acc in expired:
+            reason = "Session Expired / Invalid"
+            try:
+                c = await get_client(acc)
+                if c is None:
+                    reason = "Session String Invalid or Revoked"
+            except Exception as ex:
+                reason = str(ex)[:50]
+            lines.append(f"🔴 `{acc['phone']}` — {reason}")
+    
+    if not user_accs:
+        lines.append("\n❗ No accounts found for this user.")
+    
+    await e.reply("\n".join(lines), parse_mode="md")
 
 @bot.on(events.NewMessage(pattern="^/addadmin(@\w+)?(\s+.*)?$"))
 async def cmd_addadmin(e):
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
+    
     target_id = None
+    limit = 0  # Default unlimited (0 = unlimited)
+    
     if e.reply_to_msg_id:
         msg = await e.get_reply_message()
         target_id = msg.sender_id
     elif e.pattern_match.group(2):
-        arg = e.pattern_match.group(2).strip()
-        if arg.isdigit():
-            target_id = int(arg)
-        elif arg.startswith("@"):
-            try:
-                target_id = (await bot.get_entity(arg)).id
-            except Exception:
-                return await e.reply("❌ User not found.", parse_mode="md")
+        args = e.pattern_match.group(2).strip().split()
+        if args and args[0].isdigit():
+            target_id = int(args[0])
+        if len(args) > 1 and args[1].isdigit():
+            limit = int(args[1])
+        elif len(args) > 1 and args[1].lower() == "unlimited":
+            limit = 0
+            
     if target_id is None:
-        return await e.reply("Usage: `/addadmin <user_id>` or reply to user", parse_mode="md")
-    if is_admin(target_id):
-        return await e.reply(f"ℹ️ `{target_id}` is already admin.", parse_mode="md")
-    admins.append(target_id)
+        return await e.reply("Usage: `/addadmin <user_id> <limit>`\n`limit=0` means Unlimited", parse_mode="md")
+    
+    # Purane admins mein se data update karein
+    admin_exists = next((a for a in admins if a['id'] == target_id), None)
+    if admin_exists:
+        admin_exists['limit'] = limit
+        save_admins()
+        limit_text = "Unlimited" if limit == 0 else str(limit)
+        return await e.reply(f"✅ Admin Limit Updated for `{target_id}`: **{limit_text}** accounts", parse_mode="md")
+        
+    # Naya admin add karein
+    admins.append({"id": target_id, "limit": limit})
     save_admins()
-    await e.reply(f"✅ **`{target_id}` is now Admin!** (Limit: {config.ADMIN_ACCOUNT_LIMIT} accounts)", parse_mode="md")
+    
+    limit_text = "Unlimited" if limit == 0 else str(limit)
+    await e.reply(f"✅ **`{target_id}` is now Admin!** (Limit: **{limit_text}** accounts)", parse_mode="md")
     try:
-        await bot.send_message(target_id, "🎉 You got **Admin access**! Use /start")
+        await bot.send_message(target_id, f"🎉 You got **Admin access**! Limit: **{limit_text}** accounts")
     except Exception:
         pass
 
@@ -558,17 +627,19 @@ async def cmd_addadmin(e):
 async def cmd_rmadmin(e):
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
+    
     target_id = None
     if e.reply_to_msg_id:
         msg = await e.get_reply_message()
         target_id = msg.sender_id
     elif e.pattern_match.group(1) and e.pattern_match.group(1).strip().isdigit():
         target_id = int(e.pattern_match.group(1).strip())
+        
     if target_id is None:
         return await e.reply("Usage: `/rmadmin <user_id>`", parse_mode="md")
-    if target_id not in admins:
-        return await e.reply("ℹ️ This user is not admin.", parse_mode="md")
-    admins.remove(target_id)
+        
+    # Admins list se remove karein (naye format mein)
+    admins = [a for a in admins if a.get('id') != target_id]
     save_admins()
     await e.reply(f"🗑️ Admin revoked for `{target_id}`.", parse_mode="md")
 
@@ -577,14 +648,16 @@ async def cmd_adminlist(e):
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
     if not admins:
-        return await e.reply("No admins. Use: `/addadmin <id>`", parse_mode="md")
+        return await e.reply("No admins. Use: `/addadmin <id> <limit>`", parse_mode="md")
     lines = ["👮 **Admins:**"]
     for a in admins:
         try:
-            u = await bot.get_entity(a)
-            lines.append(f"· `{a}` — {u.first_name}")
+            u = await bot.get_entity(a['id'])
+            limit_text = "Unlimited" if a.get('limit', 0) == 0 else str(a.get('limit', 0))
+            lines.append(f"· `{a['id']}` — {u.first_name} (Limit: {limit_text})")
         except Exception:
-            lines.append(f"· `{a}` — (unknown)")
+            limit_text = "Unlimited" if a.get('limit', 0) == 0 else str(a.get('limit', 0))
+            lines.append(f"· `{a['id']}` — (Unknown) (Limit: {limit_text})")
     await e.reply("\n".join(lines), parse_mode="md")
 
 # ==========================================================
@@ -602,7 +675,7 @@ async def cb(e):
         return await e.edit(menu_text(uid), buttons=MAIN_MENU, parse_mode="md")
 
     # ── Owner Panel (Owner Only) ──
-    if data == "owner_panel":
+     if data == "owner_panel":
         if not is_owner(uid):
             return await e.answer("⛔ Owner Only!", alert=True)
         total_users = len(set(a.get("owner") for a in accounts))
@@ -611,10 +684,12 @@ async def cb(e):
             lines.append("\n**Admins:**")
             for a in admins:
                 try:
-                    u = await bot.get_entity(a)
-                    lines.append(f"· `{a}` — {u.first_name}")
+                    u = await bot.get_entity(a['id'])
+                    limit_text = "Unlimited" if a.get('limit', 0) == 0 else str(a.get('limit', 0))
+                    lines.append(f"· `{a['id']}` — {u.first_name} (Limit: {limit_text})")
                 except Exception:
-                    lines.append(f"· `{a}`")
+                    limit_text = "Unlimited" if a.get('limit', 0) == 0 else str(a.get('limit', 0))
+                    lines.append(f"· `{a['id']}` — (Unknown) (Limit: {limit_text})")
         else:
             lines.append("· No admins")
         return await e.edit("\n".join(lines), parse_mode="md",
@@ -622,21 +697,29 @@ async def cb(e):
 
     # ── My Account (With Expired details) ──
     if data == "myacc" or data == "profile":
-        total, active, expired = await check_status(uid)
-        accs = my_accounts(uid)
+        total, active, expired, user_accs = await check_status(uid)
         lines = [f"🧑‍💼 **My Profile**\nID: `{uid}`\nAccess: **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**"]
         lines.append(f"📊 Accounts: {total} | Active: {active} | Expired: {len(expired)}")
         
-        if accs:
-            lines.append("\n**Active/Connected Accounts:**")
-            for a in accs:
+        if user_accs:
+            lines.append("\n**Accounts:**")
+            for a in user_accs:
                 if a["phone"] in clients:
                     lines.append(f"🟢 `{a['phone']}` — {a.get('name','?')}")
+                else:
+                    lines.append(f"🔴 `{a['phone']}` — {a.get('name','?')} (Expired)")
             
             if expired:
                 lines.append("\n❌ **Expired/Failed Accounts:**")
-                for exp in expired:
-                    lines.append(f"🔴 `{exp}`")
+                for acc in expired:
+                    reason = "Session Expired / Invalid"
+                    try:
+                        c = await get_client(acc)
+                        if c is None:
+                            reason = "Session String Invalid or Revoked"
+                    except Exception as ex:
+                        reason = str(ex)[:50]
+                    lines.append(f"🔴 `{acc['phone']}` — {reason}")
         else:
             lines.append("\nNo accounts.")
             
@@ -645,7 +728,7 @@ async def cb(e):
 
     # ── My Status (With Expired details) ──
     if data == "mystat":
-        total, active, expired = await check_status(uid)
+        total, active, expired, user_accs = await check_status(uid)
         myc = [c for c in campaigns if c["owner"] == uid]
         lines = [f"📊 **My Status**\nAccounts: {total} | Active: {active} | Expired: {len(expired)}",
                  f"Campaigns: {len(myc)} | Scheduled: {len([x for x in scheduled if x['owner']==uid])}"]
@@ -674,7 +757,7 @@ async def cb(e):
             "**1. Add Account** — Phone+OTP / Session / Bulk\n"
             "**2. Access** — Only Owner/Admins run campaigns\n"
             "**3. Actions** — React, Vote, Poll Vote, View, Join, Leave, DM\n\n"
-            "**Commands:**\n/start — Menu\n/me — Stats\n/addadmin — Add admin\n/rmadmin — Remove admin\n/adminlist — List admins",
+            "**Commands:**\n/start — Menu\n/me — Stats\n/check — Full Account Report\n/addadmin — Add admin\n/rmadmin — Remove admin\n/adminlist — List admins",
             parse_mode="md", buttons=[[Button.inline("« Back", b"menu")]])
 
     # ── Add Account ──
