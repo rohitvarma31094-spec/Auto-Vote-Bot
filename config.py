@@ -12,8 +12,7 @@ ACCOUNTS_FILE = f"{DATA_DIR}/accounts.json"
 ADMINS_FILE = f"{DATA_DIR}/admins.json"
 SETTINGS_FILE = f"{DATA_DIR}/settings.json"
 CAMPAIGNS_FILE = f"{DATA_DIR}/campaigns.json"
-SCHEDULED_FILE = f"{DATA_DIR}/scheduled.json"  # ← YEH LINE ADD KARO
-
+SCHEDULED_FILE = f"{DATA_DIR}/scheduled.json"
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(SESSIONS_DIR, exist_ok=True)
