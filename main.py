@@ -14,7 +14,7 @@ from telethon.errors import (
     PhoneCodeExpiredError, FloodWaitError, UserAlreadyParticipantError,
     ChannelPrivateError, ChatAdminRequiredError, InviteHashInvalidError,
     InviteHashExpiredError, InviteHashEmptyError, UserNotParticipantError,
-    ChannelInvalidError
+    ChannelInvalidError, ReactionInvalidError, TimeoutError as TelethonTimeoutError
 )
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import (
@@ -27,7 +27,7 @@ from telethon.tl.functions.channels import (
 )
 from telethon.tl.functions.contacts import ResolveUsernameRequest
 from telethon.tl.types import (
-    PeerChannel, ReactionEmoji, InputPeerChannel,
+    PeerChannel, ReactionEmoji, ReactionCustomEmoji, InputPeerChannel,
     MessageEntityTextUrl, Channel, Chat, ChannelParticipant,
     ChannelParticipantBanned, ChannelParticipantCreator,
     ChannelParticipantAdmin, Message, MessageService, ChannelFull
@@ -61,18 +61,13 @@ class PremiumEmojis:
     SHIELD = "🛡️"; JOIN_CHANNEL = "📨"; JOINED = "✔️"; EXPORT = "📤"
     IMPORT = "📥"; PUBLIC = "🌐"; PRIVATE = "🔐"; REQUEST = "📩"
     STOP = "⏹️"; PAUSE = "⏸️"; RESUME = "▶️"; CLOCK = "⏰"
-    GROUP = "👥"; CHANNEL = "📺"; PRIVATE_CHANNEL = "🔏"; DIRECT_JOIN = "⚡"
+    GROUP = "👥"; PRIVATE_CHANNEL = "🔏"; DIRECT_JOIN = "⚡"
 
-    REACTION_EMOJIS = {
-        "🔥": "6334449730734529256", "❤️": "6237558987978447573",
-        "⭐": "6239815031219820750", "💎": "6240003971126139705",
-        "👑": "6332246180583447893", "🎉": "6240085923397114865",
-        "👍": "6237867138997034625", "😍": "6334437167955188087",
-        "🚀": "5188481279963715781", "💯": "6239815031219820750",
-        "🤩": "6239815031219820750", "🙌": "6237621707385871360",
-        "👏": "6237621707385871360", "💪": "5188481279963715781",
-        "✨": "6240085923397114865",
-    }
+    # FIX: galat/duplicate premium IDs hatayi gayi.
+    # Standard emoticon reactions Telegram pe universally allowed hain
+    # aur sab channels/groups pe kaam karte hain.
+    # Chahe to yahan SIRF verified custom_emoji_id daalo: {"🔥": 123456...}
+    REACTION_EMOJIS = {}
 
 # ==========================================================
 #  STORAGE
@@ -146,7 +141,7 @@ def save_scheduled():
 load_scheduled()
 
 # ==========================================================
-#  ACCESS CONTROL - ENHANCED
+#  ACCESS CONTROL
 # ==========================================================
 
 def is_owner(uid):
@@ -156,10 +151,8 @@ def is_admin(uid):
     return is_owner(uid) or uid in [a['id'] for a in admins]
 
 def get_user_limit(uid):
-    """Returns account limit for user"""
     if is_owner(uid):
         return float('inf')
-    
     admin_data = next((a for a in admins if a['id'] == uid), None)
     if admin_data:
         if admin_data.get('limit', 0) == 0:
@@ -168,31 +161,22 @@ def get_user_limit(uid):
     return 0
 
 def get_admin_accounts(uid):
-    """Get accounts accessible to this admin based on limit"""
     if is_owner(uid):
         return accounts.copy()
-    
     limit = get_user_limit(uid)
     if limit == float('inf'):
         return accounts.copy()
-    
-    # Get admin's own accounts first
     user_accs = [a for a in accounts if a.get('owner') == uid]
     if len(user_accs) >= limit:
         return user_accs[:int(limit)]
-    
-    # Fill remaining with other accounts
     remaining = int(limit) - len(user_accs)
     other_accs = [a for a in accounts if a.get('owner') != uid]
     return user_accs + other_accs[:remaining]
 
 def my_accounts(uid, limit=None):
-    """Get accounts for user (fallback to old behavior)"""
     if limit is None:
         limit = get_user_limit(uid)
-    
     user_accs = [a for a in accounts if a.get('owner') == uid]
-    
     if limit == float('inf') or limit is None:
         return user_accs
     return user_accs[:int(limit)]
@@ -201,7 +185,6 @@ def get_total_accounts():
     return len(accounts)
 
 def get_admin_usage_stats(admin_id):
-    """Get usage statistics for an admin"""
     admin_campaigns = [c for c in campaigns if c.get('owner') == admin_id]
     total_votes = sum(c.get('ok', 0) for c in admin_campaigns)
     return {
@@ -232,7 +215,6 @@ async def get_client(acc):
     with client_lock:
         if phone in clients and clients[phone].is_connected():
             return clients[phone]
-    
     try:
         c = TelegramClient(
             StringSession(acc["string"]),
@@ -295,11 +277,11 @@ async def validate_session_string(s, owner):
     return await save_session_account(c, owner)
 
 # ==========================================================
-#  CHANNEL INFO RESOLUTION - ENHANCED
+#  CHANNEL INFO RESOLUTION
 # ==========================================================
 
 class ChannelInfo:
-    def __init__(self, entity, is_private=False, is_channel=True, is_group=False, 
+    def __init__(self, entity, is_private=False, is_channel=True, is_group=False,
                  username=None, invite_hash=None, title=None, access_hash=None,
                  can_join=True, join_required=False):
         self.entity = entity
@@ -314,16 +296,13 @@ class ChannelInfo:
         self.join_required = join_required
 
 async def get_channel_info(client, ref):
-    """Get detailed channel info including private/public status"""
     try:
         entity = await resolve_entity(client, ref)
         if not entity:
             return None
-        
         is_channel = hasattr(entity, 'broadcast') and entity.broadcast
         is_group = hasattr(entity, 'group') and entity.group
         has_username = hasattr(entity, 'username') and entity.username
-        
         channel_info = ChannelInfo(
             entity=entity,
             is_private=not has_username,
@@ -333,20 +312,15 @@ async def get_channel_info(client, ref):
             title=getattr(entity, 'title', None) or getattr(entity, 'first_name', 'Unknown'),
             access_hash=getattr(entity, 'access_hash', None)
         )
-        
-        # Check if we can join
         try:
             if has_username:
-                # Public channel - can join directly
                 channel_info.can_join = True
                 channel_info.join_required = False
             else:
-                # Private channel - need invite
                 channel_info.can_join = False
                 channel_info.join_required = True
         except Exception:
             pass
-        
         return channel_info
     except Exception as e:
         print(f"[channel_info] Error: {e}")
@@ -356,21 +330,32 @@ async def resolve_entity(client, ref):
     kind, val = ref
     try:
         if kind == "username":
-            # Try to resolve username
             try:
                 return await client.get_entity(val)
             except Exception:
-                # Try with @
                 if not val.startswith('@'):
                     return await client.get_entity('@' + val)
                 raise
         elif kind == "c":
             return await client.get_entity(PeerChannel(val))
         elif kind == "id":
-            cid = abs(val) - 1000000000000 if val < 0 else val
-            return await client.get_entity(PeerChannel(cid))
+            cid = val
+            if cid < 0:
+                cid = abs(cid)
+                if cid > 1000000000000:
+                    cid -= 1000000000000
+            try:
+                return await client.get_entity(PeerChannel(cid))
+            except Exception:
+                # FIX: fallback — dialogs me dhoondo
+                try:
+                    async for d in client.iter_dialogs():
+                        if d.id == val or (d.entity and getattr(d.entity, 'id', None) == cid):
+                            return d.entity
+                except Exception:
+                    pass
+            return None
         elif kind == "invite":
-            # Handle invite hash - try to get channel info
             try:
                 result = await client(CheckChatInviteRequest(hash=val))
                 if result.chat:
@@ -383,105 +368,105 @@ async def resolve_entity(client, ref):
         return None
     return None
 
-async def resolve_entity_cached(client, ref):
-    key = str(ref)
-    if key in entity_cache and entity_cache[key].get('expires', 0) > time.time():
-        return entity_cache[key]['entity']
-    entity = await resolve_entity(client, ref)
-    if entity:
-        entity_cache[key] = {'entity': entity, 'expires': time.time() + 3600}
-    return entity
-
+# FIX: cache ab PER ACCOUNT hai — access_hash har account ka alag hota hai,
+# ek account ka entity doosre account pe use karna = FAIL
 entity_cache = {}
 
+async def resolve_entity_cached(c, ref):
+    phone = getattr(getattr(c, 'session', None), 'phone', None) or str(id(c))
+    store = entity_cache.setdefault(str(phone), {})
+    key = str(ref)
+    hit = store.get(key)
+    if hit and hit[1] > time.time():
+        return hit[0]
+    ent = await resolve_entity(c, ref)
+    if ent:
+        store[key] = (ent, time.time() + 1800)
+    return ent
+
 # ==========================================================
-#  PARSING FUNCTIONS - ENHANCED
+#  PARSING FUNCTIONS
 # ==========================================================
 
 POST_RE = re.compile(r"(?:https?://)?t\.me/(?:c/(\d+)/(\d+)|([A-Za-z0-9_]{4,})/(\d+))", re.I)
 INVITE_RE = re.compile(r"t\.me/(?:joinchat/|\+)([A-Za-z0-9_-]+)", re.I)
 
 def parse_post_url(url):
-    """Parse post URL - returns (ref, msg_id)"""
     m = POST_RE.search(url.strip())
     if not m:
         return None
-    if m.group(1):  # Private channel: t.me/c/1234567890/123
+    if m.group(1):
         return ("c", int(m.group(1))), int(m.group(2))
-    return ("username", m.group(3)), int(m.group(4))  # Public channel
+    return ("username", m.group(3)), int(m.group(4))
 
 def parse_join_target(text):
-    """Parse join target - supports both @username and invite links"""
     u = text.strip()
-    
-    # Check for invite link
     m = INVITE_RE.search(u)
     if m:
         return ("invite", m.group(1))
-    
-    # Check for username
     m = re.match(r"(?:https?://)?t\.me/@?([A-Za-z0-9_]{3,})/?$", u, re.I)
     if m:
         return ("username", m.group(1))
-    
-    # Check for @username
     if u.startswith("@") and len(u) > 3:
         return ("username", u[1:])
-    
-    # Check for channel ID
     if re.fullmatch(r"-?\d+", u):
         return ("id", int(u))
-    
     return None
 
 def parse_join_input(text):
-    """Parse join input - handles both post and channel info"""
-    # First check if it's a post URL
     post_parsed = parse_post_url(text)
     if post_parsed:
         return {"type": "post", "ref": post_parsed[0], "msg_id": post_parsed[1]}
-    
-    # Check if it's a channel join target
     join_target = parse_join_target(text)
     if join_target:
         return {"type": "channel", "target": join_target}
-    
     return None
 
 # ==========================================================
-#  CAMPAIGN WORKERS - ENHANCED
+#  CAMPAIGN WORKERS
 # ==========================================================
 
-RANDOM_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👏", "😍", "💯", "⭐", "✨", "💪", "🤩", "🙌", "👑", "💎", "🚀"]
+# FIX: sirf Telegram-allowed standard reaction emojis
+RANDOM_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👏", "😍", "💯", "🤩", "🙏", "⚡"]
 
 async def send_premium_reaction(c, ent, msg_id, emoji):
-    """Send reaction with premium emoji support"""
-    custom_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
-    try:
-        if custom_id:
-            await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(
-                emoticon=emoji, custom_emoji_id=int(custom_id)))
-        else:
-            await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(emoticon=emoji))
-        return True
-    except Exception as e:
-        print(f"[reaction] Error: {e}")
-        return False
+    """FIX: ReactionEmoji me custom_emoji_id argument exist nahi karta —
+    pehla bug jo saare reactions tod raha tha. Ab:
+    1) verified premium ID ho to ReactionCustomEmoji
+    2) warna standard emoticon reaction (sabpe chalta hai)"""
+    emoji = (emoji or "").strip()
+    doc_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
+    attempts = []
+    if doc_id:
+        attempts.append(ReactionCustomEmoji(document_id=int(doc_id)))
+    attempts.append(ReactionEmoji(emoticon=emoji))
+
+    last_err = None
+    for r in attempts:
+        try:
+            await c.send_reaction(ent, msg_id, reaction=r)
+            return True
+        except ReactionInvalidError:
+            last_err = f"'{emoji}' is post pe allowed reaction nahi hai"
+        except TypeError as te:
+            last_err = f"bad reaction type: {te}"
+        except Exception as ex:
+            last_err = f"{type(ex).__name__}: {str(ex)[:60]}"
+    print(f"[reaction] {emoji}: {last_err}")
+    return False
 
 async def do_react(c, ent, msg_id, emoji):
-    """React to a message"""
     if emoji and emoji.lower() in ["random", "rand", "r", "🍀"]:
         emoji = random.choice(RANDOM_EMOJIS)
     return await send_premium_reaction(c, ent, msg_id, emoji)
 
 async def do_vote(c, ent, msg_id, btn_index, btn_text):
-    """Vote using inline button"""
+    """Vote = post ke inline button pe click"""
     try:
         msg = await c.get_messages(ent, ids=msg_id)
         if not msg or not msg.buttons:
             raise ValueError("No inline buttons on this post")
-        
-        # Find the button
+
         btn = None
         idx = 1
         for row in msg.buttons:
@@ -493,31 +478,32 @@ async def do_vote(c, ent, msg_id, btn_index, btn_text):
                 idx += 1
             if btn:
                 break
-        
+
         if btn is None:
-            btn = msg.buttons[0][0]  # First button as fallback
-        
-        # Click the button
-        await btn.click()
+            btn = msg.buttons[0][0]
+
+        # FIX: bot callback answer na kare to bhi vote jaye (raw fallback)
+        try:
+            await btn.click()
+        except (asyncio.TimeoutError, TelethonTimeoutError):
+            await c(GetBotCallbackAnswerRequest(
+                peer=ent, msg_id=msg_id, data=btn.data))
         return True
     except Exception as e:
         print(f"[vote] Error: {e}")
         return False
 
 async def do_poll_vote(c, ent, msg_id, poll_options):
-    """Vote in a poll"""
     try:
         msg = await c.get_messages(ent, ids=msg_id)
         if not msg or not msg.poll:
             raise ValueError("Not a poll")
-        
         answers = msg.poll.poll.answers
         opts = []
         for i in poll_options:
             if i < 0 or i >= len(answers):
                 raise ValueError(f"Option {i} out of range (0-{len(answers)-1})")
             opts.append(answers[i].option)
-        
         await c(SendVoteRequest(peer=ent, msg_id=msg_id, options=opts))
         return True
     except Exception as e:
@@ -525,7 +511,6 @@ async def do_poll_vote(c, ent, msg_id, poll_options):
         return False
 
 async def do_view(c, ent, msg_id):
-    """Mark message as viewed"""
     try:
         msg = await c.get_messages(ent, ids=msg_id)
         if msg:
@@ -536,109 +521,69 @@ async def do_view(c, ent, msg_id):
         print(f"[view] Error: {e}")
         return False
 
+# FIX: Join — public/private/ID teeno solid
 async def do_join_channel(c, target, channel_info=None):
-    """Join a channel - handles both public and private"""
+    kind, val = target
     try:
-        kind, val = target
-        
-        # If we have channel info, use it
-        if channel_info and channel_info.is_private:
-            # Private channel - need invite
-            if channel_info.username:
-                # Try public join first
-                try:
-                    await c(JoinChannelRequest(channel_info.username))
-                    return True
-                except Exception:
-                    pass
-            
-            # Try using entity directly
+        if kind == "invite":
             try:
-                await c(JoinChannelRequest(channel_info.entity))
-                return True
-            except Exception:
-                pass
-        
-        # Public channel or fallback
-        if kind == "username":
-            # Try to join by username
-            try:
-                await c(JoinChannelRequest(val))
-                return True
-            except UserAlreadyParticipantError:
-                return True
-            except Exception:
-                # Try with @
-                if not val.startswith('@'):
-                    try:
-                        await c(JoinChannelRequest('@' + val))
-                        return True
-                    except Exception:
-                        pass
-                raise
-        
-        elif kind == "id":
-            try:
-                entity = await resolve_entity(c, target)
-                if entity:
-                    await c(JoinChannelRequest(entity))
-                    return True
-            except Exception:
-                raise
-        
-        elif kind == "invite":
-            try:
-                # Try to join with invite hash
                 await c(ImportChatInviteRequest(val))
                 return True
             except UserAlreadyParticipantError:
                 return True
-            except Exception:
-                raise
-        
+            except (InviteHashExpiredError, InviteHashInvalidError, InviteHashEmptyError):
+                print(f"[join] invite link expired/invalid: {val[:10]}...")
+                return False
+
+        if kind == "username":
+            uname = val if val.startswith("@") else "@" + val
+            try:
+                await c(JoinChannelRequest(uname))
+                return True
+            except UserAlreadyParticipantError:
+                return True
+            except ChannelPrivateError:
+                print(f"[join] {uname} private hai — invite link chahiye")
+                return False
+
+        if kind == "id":
+            ent = await resolve_entity(c, target)
+            if not ent:
+                return False
+            try:
+                await c(JoinChannelRequest(ent))
+                return True
+            except UserAlreadyParticipantError:
+                return True
+
         return False
-    except UserAlreadyParticipantError:
-        return True
+    except FloodWaitError as e:
+        print(f"[join] floodwait {e.seconds}s")
+        await asyncio.sleep(min(e.seconds, 60))
+        return False
     except Exception as e:
-        print(f"[join] Error: {e}")
+        print(f"[join] Error: {type(e).__name__}: {str(e)[:60]}")
         return False
 
 async def do_join_request(c, target, channel_info=None):
-    """Send join request to private channel"""
-    try:
-        kind, val = target
-        
-        if channel_info and channel_info.is_private:
-            # Private channel - try to join with request
-            try:
-                # First try to join directly
-                result = await do_join_channel(c, target, channel_info)
-                if result:
-                    return True
-            except Exception:
-                pass
-            
-            # If direct join fails, try import invite
-            if kind == "invite":
-                try:
-                    await c(ImportChatInviteRequest(val))
-                    return True
-                except Exception:
-                    pass
-        
-        # Fallback to regular join
-        return await do_join_channel(c, target, channel_info)
-    except Exception as e:
-        print(f"[join_request] Error: {e}")
-        return False
+    """Private request-to-join channels ke liye"""
+    kind, val = target
+    if kind == "invite":
+        try:
+            await c(ImportChatInviteRequest(val))
+            return True
+        except UserAlreadyParticipantError:
+            return True
+        except Exception as e:
+            print(f"[join_request] {type(e).__name__}: {str(e)[:60]}")
+            return False
+    return await do_join_channel(c, target, channel_info)
 
 async def do_leave_channel(c, target):
-    """Leave a channel"""
     try:
         kind, val = target
         if kind == "invite":
             raise ValueError("Cannot leave via invite link")
-        
         entity = await resolve_entity(c, target)
         if entity:
             await c(LeaveChannelRequest(entity))
@@ -649,17 +594,11 @@ async def do_leave_channel(c, target):
         return False
 
 async def do_dm(c, target, text):
-    """Send DM to user"""
     try:
         kind, val = target
         if kind == "invite":
             raise ValueError("DM target must be @username or user id")
-        
-        if kind == "username":
-            entity = await c.get_entity(val)
-        else:
-            entity = await c.get_entity(val)
-        
+        entity = await c.get_entity(val)
         await c.send_message(entity, text)
         return True
     except Exception as e:
@@ -667,149 +606,127 @@ async def do_dm(c, target, text):
         return False
 
 # ==========================================================
-#  CAMPAIGN EXECUTION - ENHANCED WITH CHANNEL INFO
+#  CAMPAIGN EXECUTION
 # ==========================================================
 
 async def get_channel_info_for_campaign(uid, post_ref, target=None):
-    """Get channel info for campaign - tries multiple methods"""
-    # Try to get info from post first
-    first_acc = None
     accs = get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid)
     if not accs:
         return None
-    
     first_acc = await get_client(accs[0])
     if not first_acc:
         return None
-    
     try:
-        # Try to get channel info from post
         if post_ref:
             entity = await resolve_entity_cached(first_acc, post_ref)
             if entity:
                 return await get_channel_info(first_acc, post_ref)
-        
-        # Try from target
         if target:
             entity = await resolve_entity_cached(first_acc, target)
             if entity:
                 return await get_channel_info(first_acc, target)
     except Exception as e:
         print(f"[channel_info] Error: {e}")
-    
     return None
 
 async def run_campaign(uid, action, opts):
-    """Enhanced campaign runner with channel info and count control"""
     campaign_id = f"{uid}_{int(time.time())}"
-    
-    # Check if campaign should be stopped
+
     if campaign_id in active_campaigns and active_campaigns[campaign_id].get('stopped'):
         return 0, ["Campaign stopped by user"]
-    
-    # Get accounts
+
     count = int(opts.get("count", 0))
     if count <= 0:
-        # Get accounts based on admin limit
         accs = get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid)
     else:
         accs = (get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))[:count]
-    
+
     if not accs:
         return 0, ["No accounts found or Limit reached."]
-    
-    # Randomize accounts
+
     random.shuffle(accs)
-    
-    # Get settings
+
     st = get_settings(uid)
     ok, fail = 0, []
-    
-    # Parse options
+
     post_ref = opts.get("post_ref")
     msg_id = opts.get("msg_id")
     target = opts.get("target")
     emoji = opts.get("emoji")
     bi, bt = opts.get("btn_index"), opts.get("btn_text")
     poll_options = opts.get("poll_options", [])
-    
-    # Get channel info
+    if isinstance(poll_options, str):
+        poll_options = [int(x.strip()) for x in poll_options.split(',') if x.strip().isdigit()]
+
     channel_info = None
     if post_ref or target:
         channel_info = await get_channel_info_for_campaign(uid, post_ref, target)
-    
-    # Store campaign info
+
     campaign_info = {
-        'id': campaign_id,
-        'owner': uid,
-        'action': action,
-        'opts': opts,
-        'started': time.time(),
-        'total': len(accs),
-        'processed': 0,
-        'status': 'running'
+        'id': campaign_id, 'owner': uid, 'action': action, 'opts': opts,
+        'started': time.time(), 'total': len(accs), 'processed': 0, 'status': 'running'
     }
     active_campaigns[campaign_id] = campaign_info
     running_campaigns[campaign_id] = campaign_info
-    
+
     try:
         for i, acc in enumerate(accs):
-            # Check if campaign should stop
             if campaign_id in active_campaigns and active_campaigns[campaign_id].get('stopped'):
                 fail.append(f"Campaign stopped at {i} accounts")
                 break
-            
+
             try:
                 c = await get_client(acc)
                 if c is None:
                     fail.append(f"{acc['phone']}: Session expired")
                     continue
-                
-                # Get entity for post if needed
+
                 ent = None
                 if post_ref:
                     ent = await resolve_entity_cached(c, post_ref)
                     if not ent and target:
-                        # Try using target as fallback
                         ent = await resolve_entity_cached(c, target)
-                
+
+                # FIX: post resolve nahi hua = account private channel ka member nahi hai
+                if post_ref and ent is None:
+                    fail.append(f"{acc['phone']}: Post open nahi hua (private channel? pehle JOIN karo)")
+                    continue
+
                 if action in ("react", "react_vote", "react_vote_view"):
                     if action == "react_vote_view":
                         await do_view(c, ent, msg_id)
                         await asyncio.sleep(random.uniform(0.5, 1.5))
-                    
+
                     success = await do_react(c, ent, msg_id, emoji)
                     if not success:
                         fail.append(f"{acc['phone']}: Reaction failed")
                         continue
-                    
+
                     if action != "react":
                         await asyncio.sleep(random.uniform(0.5, 1.5))
                         success = await do_vote(c, ent, msg_id, bi, bt)
                         if not success:
                             fail.append(f"{acc['phone']}: Vote failed")
                             continue
-                
+
                 elif action == "vote":
                     success = await do_vote(c, ent, msg_id, bi, bt)
                     if not success:
                         fail.append(f"{acc['phone']}: Vote failed")
                         continue
-                
+
                 elif action == "poll_vote":
-                    if isinstance(poll_options, str):
-                        poll_options = [int(x.strip()) for x in poll_options.split(',') if x.strip().isdigit()]
                     success = await do_poll_vote(c, ent, msg_id, poll_options)
                     if not success:
                         fail.append(f"{acc['phone']}: Poll vote failed")
                         continue
-                
+
                 elif action == "view":
                     success = await do_view(c, ent, msg_id)
                     if not success:
                         fail.append(f"{acc['phone']}: View failed")
                         continue
-                
+
                 elif action == "join":
                     if target:
                         success = await do_join_channel(c, target, channel_info)
@@ -819,7 +736,7 @@ async def run_campaign(uid, action, opts):
                     else:
                         fail.append(f"{acc['phone']}: No target specified")
                         continue
-                
+
                 elif action == "join_request":
                     if target:
                         success = await do_join_request(c, target, channel_info)
@@ -829,7 +746,7 @@ async def run_campaign(uid, action, opts):
                     else:
                         fail.append(f"{acc['phone']}: No target specified")
                         continue
-                
+
                 elif action == "leave":
                     if target:
                         success = await do_leave_channel(c, target)
@@ -839,7 +756,7 @@ async def run_campaign(uid, action, opts):
                     else:
                         fail.append(f"{acc['phone']}: No target specified")
                         continue
-                
+
                 elif action == "dm":
                     if target:
                         success = await do_dm(c, target, opts.get("dm_text", ""))
@@ -849,62 +766,59 @@ async def run_campaign(uid, action, opts):
                     else:
                         fail.append(f"{acc['phone']}: No target specified")
                         continue
-                
+
                 ok += 1
                 campaign_info['processed'] = ok + len(fail)
-                
+
             except FloodWaitError as e:
                 fail.append(f"{acc['phone']}: Flood wait {e.seconds}s")
                 await asyncio.sleep(min(e.seconds, 30))
             except Exception as e:
                 fail.append(f"{acc['phone']}: {type(e).__name__}: {str(e)[:50]}")
-            
-            # Delay between accounts
+
             await asyncio.sleep(random.uniform(st["delay_min"], st["delay_max"]))
-    
+
     finally:
-        # Update campaign status
         campaign_info['status'] = 'completed'
         campaign_info['ended'] = time.time()
         campaign_info['ok'] = ok
         campaign_info['failed'] = len(fail)
-        
-        # Save to history
+
+        # FIX: campaigns list me record — "My Campaigns" ab filled aayega
+        campaigns.append({
+            "owner": uid, "action": action, "ok": ok, "fail": len(fail),
+            "time": time.strftime("%d-%m %H:%M")
+        })
+        save_campaigns()
+
         campaign_history.append({
-            "owner": uid,
-            "action": action,
-            "ok": ok,
-            "fail": len(fail),
+            "owner": uid, "action": action, "ok": ok, "fail": len(fail),
             "time": time.strftime("%d-%m %H:%M"),
             "total": len(accs),
             "duration": campaign_info['ended'] - campaign_info['started'],
             "campaign_id": campaign_id
         })
         save_campaign_history()
-        
-        # Remove from active
+
         active_campaigns.pop(campaign_id, None)
         running_campaigns.pop(campaign_id, None)
-    
+
     return ok, fail
 
 # ==========================================================
-#  CAMPAIGN CONTROL FUNCTIONS
+#  CAMPAIGN CONTROL
 # ==========================================================
 
 def stop_campaign(campaign_id):
-    """Stop a running campaign"""
     if campaign_id in active_campaigns:
         active_campaigns[campaign_id]['stopped'] = True
         return True
     return False
 
 def get_running_campaigns():
-    """Get list of running campaigns"""
     return list(running_campaigns.values())
 
 async def scheduler_loop(bot):
-    """Scheduler loop for scheduled campaigns"""
     while True:
         now = time.time()
         for s in [x for x in scheduled if x["run_at"] <= now]:
@@ -931,7 +845,6 @@ bot = TelegramClient(
     config.API_HASH
 ).start(bot_token=config.BOT_TOKEN)
 
-# Actions list
 ACTIONS = [
     ("react", f"{PremiumEmojis.STAR} React"),
     ("vote", f"{PremiumEmojis.VOTE} Vote"),
@@ -945,7 +858,6 @@ ACTIONS = [
     ("dm", f"{PremiumEmojis.SPEAKER} DM"),
 ]
 
-# Main menu buttons
 MAIN_MENU = [
     [Button.inline(f"{PremiumEmojis.ID} My Account", b"myacc"),
      Button.inline(f"{PremiumEmojis.CONNECT} Add Account", b"add")],
@@ -961,37 +873,32 @@ MAIN_MENU = [
 ]
 
 def menu_text(uid):
-    """Generate menu text with account info"""
     my = len(my_accounts(uid))
     limit = get_user_limit(uid)
     limit_text = "Unlimited" if is_owner(uid) else (f"{limit}" if is_admin(uid) else "0")
-    
-    # Get admin accessible accounts if admin
     if is_admin(uid) and not is_owner(uid):
         accessible = len(get_admin_accounts(uid))
         my = accessible
-    
+
     text = (f"{PremiumEmojis.CROWN} **╔═══ VOTEFLOW BOT ═══╗**\n\n"
             f"{PremiumEmojis.STATS} **Your Stats:**\n"
             f"┌──────────────────────┐\n"
             f"│ Your Accounts: **{my}**\n"
             f"│ Your Limit: **{limit_text}**\n")
-    
+
     if is_admin(uid):
-        total = get_total_accounts()
-        text += f"│ Total Bot Accounts: **{total}**\n"
-    
+        text += f"│ Total Bot Accounts: **{get_total_accounts()}**\n"
+
     text += (f"└──────────────────────┘\n\n"
              f"{PremiumEmojis.LOCK} **Access:** **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n")
-    
-    # Global stats for owner
+
     if is_owner(uid):
         running = len(get_running_campaigns())
         text += (f"{PremiumEmojis.CHART} **Global Stats:**\n"
                  f"Total Accounts: **{get_total_accounts()}**\n"
                  f"Running Campaigns: **{running}**\n"
                  f"Total Users: **{len(set(a.get('owner') for a in accounts))}**\n")
-    
+
     return text
 
 def no_access():
@@ -1012,7 +919,6 @@ async def cmd_me(e):
     total_accs = len(my_accounts(uid))
     if is_admin(uid):
         total_accs = len(get_admin_accounts(uid))
-    
     await e.reply(f"{PremiumEmojis.ID} **My Profile**\n"
                   f"ID: `{uid}`\n"
                   f"Access: {'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}\n"
@@ -1022,15 +928,12 @@ async def cmd_me(e):
 @bot.on(events.NewMessage(pattern="^/check$"))
 async def cmd_check(e):
     uid = e.sender_id
-    
     if is_admin(uid):
-        # Get all accessible accounts
         accs = get_admin_accounts(uid)
         total = len(accs)
         active = 0
         expired = []
-        
-        for acc in accs[:20]:  # Limit to 20 for speed
+        for acc in accs[:20]:
             c = await get_client(acc)
             if c is None:
                 expired.append(acc)
@@ -1040,7 +943,7 @@ async def cmd_check(e):
                     active += 1
                 except Exception:
                     expired.append(acc)
-        
+
         lines = [f"📋 **Account Report**",
                 f"👤 User ID: `{uid}`",
                 f"Access: {'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}",
@@ -1048,26 +951,23 @@ async def cmd_check(e):
                 f"👥 **Total Accessible:** {total}",
                 f"🟢 **Active:** {active}",
                 f"🔴 **Expired/Failed:** {len(expired)}"]
-        
+
         if expired:
             lines.append("\n❌ **Expired Account Details:**")
             for acc in expired[:10]:
                 lines.append(f"🔴 `{acc['phone']}` — Session Expired")
-        
+
         await e.reply("\n".join(lines), parse_mode="md")
     else:
-        # Regular user check
         total, active, expired, user_accs = await check_status(uid)
         await e.reply(f"📋 **Account Report**\n"
                       f"Total: {total}\nActive: {active}\nExpired: {len(expired)}", parse_mode="md")
 
 async def check_status(uid):
-    """Check status of user accounts"""
     user_accs = [a for a in accounts if a.get("owner") == uid]
     total = len(user_accs)
     active, expired = 0, []
-    
-    for a in user_accs[:20]:  # Limit for speed
+    for a in user_accs[:20]:
         c = await get_client(a)
         if c is None:
             expired.append(a)
@@ -1077,17 +977,16 @@ async def check_status(uid):
                 active += 1
             except Exception:
                 expired.append(a)
-    
     return total, active, expired, user_accs
 
 @bot.on(events.NewMessage(pattern="^/addadmin(@\w+)?(\s+.*)?$"))
 async def cmd_addadmin(e):
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
-    
+
     target_id = None
     limit = 0
-    
+
     if e.reply_to_msg_id:
         msg = await e.get_reply_message()
         target_id = msg.sender_id
@@ -1099,21 +998,20 @@ async def cmd_addadmin(e):
             limit = int(args[1])
         elif len(args) > 1 and args[1].lower() == "unlimited":
             limit = 0
-    
+
     if target_id is None:
         return await e.reply("Usage: `/addadmin <user_id> <limit>`\n`limit=0` means Unlimited", parse_mode="md")
-    
-    # Update or add admin
+
     admin_exists = next((a for a in admins if a['id'] == target_id), None)
     if admin_exists:
         admin_exists['limit'] = limit
         save_admins()
         limit_text = "Unlimited" if limit == 0 else str(limit)
         return await e.reply(f"✅ Admin Limit Updated for `{target_id}`: **{limit_text}** accounts", parse_mode="md")
-    
+
     admins.append({"id": target_id, "limit": limit})
     save_admins()
-    
+
     limit_text = "Unlimited" if limit == 0 else str(limit)
     await e.reply(f"✅ **`{target_id}` is now Admin!** (Limit: **{limit_text}** accounts)", parse_mode="md")
     try:
@@ -1123,19 +1021,20 @@ async def cmd_addadmin(e):
 
 @bot.on(events.NewMessage(pattern="^/rmadmin(\s+.*)?$"))
 async def cmd_rmadmin(e):
+    global admins                      # FIX: bina 'global' revoke save nahi hota tha
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
-    
+
     target_id = None
     if e.reply_to_msg_id:
         msg = await e.get_reply_message()
         target_id = msg.sender_id
     elif e.pattern_match.group(1) and e.pattern_match.group(1).strip().isdigit():
         target_id = int(e.pattern_match.group(1).strip())
-    
+
     if target_id is None:
         return await e.reply("Usage: `/rmadmin <user_id>`", parse_mode="md")
-    
+
     admins = [a for a in admins if a.get('id') != target_id]
     save_admins()
     await e.reply(f"🗑️ Admin revoked for `{target_id}`.", parse_mode="md")
@@ -1146,7 +1045,7 @@ async def cmd_adminlist(e):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
     if not admins:
         return await e.reply("No admins. Use: `/addadmin <id> <limit>`", parse_mode="md")
-    
+
     lines = ["👮 **Admins:**"]
     for a in admins:
         try:
@@ -1162,10 +1061,9 @@ async def cmd_adminlist(e):
 
 @bot.on(events.NewMessage(pattern="^/stop(\s+.*)?$"))
 async def cmd_stop(e):
-    """Stop a running campaign"""
     if not is_admin(e.sender_id):
         return await e.reply("⛔ Admin Only!", parse_mode="md")
-    
+
     campaign_id = e.pattern_match.group(1)
     if campaign_id:
         campaign_id = campaign_id.strip()
@@ -1174,11 +1072,9 @@ async def cmd_stop(e):
         else:
             await e.reply(f"❌ Campaign `{campaign_id}` not found or already completed.", parse_mode="md")
     else:
-        # Show running campaigns
         running = get_running_campaigns()
         if not running:
             return await e.reply("No running campaigns.", parse_mode="md")
-        
         lines = ["⏹️ **Running Campaigns:**"]
         for c in running:
             lines.append(f"· `{c['id']}` — {c['action']} ({c['processed']}/{c['total']})")
@@ -1186,7 +1082,7 @@ async def cmd_stop(e):
         await e.reply("\n".join(lines), parse_mode="md")
 
 # ==========================================================
-#  CALLBACK ROUTER - ENHANCED
+#  CALLBACK ROUTER
 # ==========================================================
 
 @bot.on(events.CallbackQuery())
@@ -1194,40 +1090,46 @@ async def cb(e):
     uid = e.sender_id
     data = e.data.decode()
     s = state(uid)
-    
+
     if data == "menu":
         reset(uid)
         return await e.edit(menu_text(uid), buttons=MAIN_MENU, parse_mode="md")
-    
+
+    # ── Inline Button Picker (vote button selection) ──
+    if data.startswith("pickbtn:"):
+        idx = int(data[8:])
+        s = state(uid)
+        btns = s.get("post_btns") or []
+        if 1 <= idx <= len(btns):
+            s["camp_opts"]["btn_index"] = idx
+            s["camp_opts"]["btn_text"] = btns[idx - 1].text
+            return await e.answer(f"✅ Button {idx} selected: {(btns[idx-1].text or '?')[:30]}")
+        return await e.answer("Invalid button", alert=True)
+
     # ── Running Campaigns ──
     if data == "running":
         running = get_running_campaigns()
         if not running:
             return await e.edit("No running campaigns.", buttons=[[Button.inline("« Back", b"menu")]])
-        
         lines = ["⏱️ **Running Campaigns:**"]
         for c in running:
             progress = f"{c['processed']}/{c['total']}" if c['total'] > 0 else "Processing"
             lines.append(f"· `{c['id'][:8]}` — {c['action']} ({progress})")
             lines.append(f"  Started: {datetime.fromtimestamp(c['started']).strftime('%H:%M')}")
-        
         await e.edit("\n".join(lines), buttons=[[Button.inline("« Back", b"menu")]])
-    
+
     # ── Owner Panel ──
     if data == "owner_panel":
         if not is_owner(uid):
             return await e.answer("⛔ Owner Only!", alert=True)
-        
         total_users = len(set(a.get("owner") for a in accounts))
         running = len(get_running_campaigns())
-        
         lines = [f"👑 **Owner Panel**\n"
                 f"Global Accounts: {len(accounts)}\n"
                 f"Users: {total_users}\n"
                 f"Admins: {len(admins)}\n"
                 f"Running Campaigns: {running}\n"
                 f"Scheduled: {len(scheduled)}"]
-        
         if admins:
             lines.append("\n**Admins:**")
             for a in admins[:10]:
@@ -1240,19 +1142,16 @@ async def cb(e):
                     lines.append(f"· `{a['id']}` — (Unknown) (Limit: {limit_text})")
         else:
             lines.append("· No admins")
-        
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
-    
+
     # ── My Account ──
     if data == "myacc" or data == "profile":
         if is_admin(uid):
-            # Show admin accessible accounts
             accs = get_admin_accounts(uid)
             total = len(accs)
             active = 0
             expired = []
-            
             for acc in accs[:15]:
                 c = await get_client(acc)
                 if c is None:
@@ -1263,10 +1162,8 @@ async def cb(e):
                         active += 1
                     except Exception:
                         expired.append(acc)
-            
             lines = [f"🧑‍💼 **My Profile**\nID: `{uid}`\nAccess: **{'👑 Owner' if is_owner(uid) else '✅ Admin'}**"]
             lines.append(f"📊 Accessible Accounts: {total} | Active: {active} | Expired: {len(expired)}")
-            
             if accs:
                 lines.append("\n**Accounts (Sample):**")
                 for a in accs[:10]:
@@ -1274,17 +1171,14 @@ async def cb(e):
                         lines.append(f"🟢 `{a['phone']}` — {a.get('name','?')}")
                     else:
                         lines.append(f"🔴 `{a['phone']}` — {a.get('name','?')} (Expired)")
-            
             if expired:
                 lines.append("\n❌ **Expired Accounts:**")
                 for acc in expired[:5]:
                     lines.append(f"🔴 `{acc['phone']}`")
         else:
-            # Regular user
             total, active, expired, user_accs = await check_status(uid)
             lines = [f"🧑‍💼 **My Profile**\nID: `{uid}`\nAccess: **👤 User**"]
             lines.append(f"📊 Accounts: {total} | Active: {active} | Expired: {len(expired)}")
-            
             if user_accs:
                 lines.append("\n**Your Accounts:**")
                 for a in user_accs:
@@ -1292,10 +1186,9 @@ async def cb(e):
                         lines.append(f"🟢 `{a['phone']}` — {a.get('name','?')}")
                     else:
                         lines.append(f"🔴 `{a['phone']}` — {a.get('name','?')} (Expired)")
-        
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
-    
+
     # ── My Status ──
     if data == "mystat":
         myc = [c for c in campaigns if c["owner"] == uid]
@@ -1306,38 +1199,31 @@ async def cb(e):
         else:
             total, active, expired, _ = await check_status(uid)
             lines.append(f"Your Accounts: {total} | Active: {active}")
-        
         lines.append(f"Campaigns Run: {len(myc)}")
         lines.append(f"Scheduled: {len([x for x in scheduled if x['owner']==uid])}")
-        
         if myc:
             lines.append("\n**Last 5 Campaigns:**")
             for c in myc[-5:]:
                 lines.append(f"· `{c['time']}` {c['action']} ✅{c['ok']} ❌{c['fail']}")
-        
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
-    
+
     # ── My Campaigns ──
     if data == "mycamp":
         myc = [c for c in campaigns if c["owner"] == uid]
         if not myc:
             return await e.edit("📋 No campaigns.", buttons=[[Button.inline("« Back", b"menu")]])
-        
         lines = [f"📋 **My Campaigns ({len(myc)})**"]
         for c in myc[-15:]:
             lines.append(f"· `{c['time']}` {c['action']} ✅{c['ok']} ❌{c['fail']}")
-        
-        # Add history
         history = [h for h in campaign_history if h["owner"] == uid]
         if history:
             lines.append("\n**History Stats:**")
             total_votes = sum(h.get('ok', 0) for h in history)
             lines.append(f"Total Actions: {total_votes}")
-        
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
-    
+
     # ── Help ──
     if data == "help":
         return await e.edit(
@@ -1356,8 +1242,7 @@ async def cb(e):
             "• **DM** — Send direct message\n\n"
             "**📊 Private/Public Channels:**\n"
             "• **Public:** Just the post URL works\n"
-            "• **Private:** Need channel link + post URL\n"
-            "• **Join Request:** Use join request action\n\n"
+            "• **Private:** Pehle JOIN karo, phir React/Vote\n\n"
             "**🔧 Commands:**\n"
             "/start — Menu\n"
             "/me — Stats\n"
@@ -1367,13 +1252,13 @@ async def cb(e):
             "/adminlist — List admins\n"
             "/stop — Stop campaign\n\n"
             "💡 **Tips:**\n"
-            "• For private channels, provide both post URL and channel invite link\n"
-            "• Count controls how many accounts to use\n"
-            "• Use 0 for max available accounts",
+            "• Vote campaign me bot khud post ke buttons dikha deta hai — click karke select karo\n"
+            "• Private channels: pehle Join campaign chalao, phir React/Vote\n"
+            "• Count = kitne accounts use hone chahiye (0 = sab)",
             parse_mode="md",
             buttons=[[Button.inline("« Back", b"menu")]]
         )
-    
+
     # ── Add Account ──
     if data == "add":
         s.clear()
@@ -1382,39 +1267,39 @@ async def cb(e):
                                      [Button.inline("🔑 Session String", b"add_string")],
                                      [Button.inline("📋 Bulk Sessions", b"bulk")],
                                      [Button.inline("« Back", b"menu")]], parse_mode="md")
-    
+
     if data == "add_phone":
         s.clear()
         s["step"] = "add_phone_number"
         return await e.edit("📱 **Phone Login**\nSend phone (international):\n`+919876543210`",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-    
+
     if data == "add_string":
         s.clear()
         s["step"] = "add_string_input"
         return await e.edit("🔑 **Session Login**\nSend your session string:",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-    
+
     if data == "bulk":
         s.clear()
         s["step"] = "bulk_input"
         return await e.edit("📋 **Bulk Sessions**\nPaste strings (1 per line) or upload .txt",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-    
+
     # ── Remove Account ──
     if data == "remove_acc":
         s.clear()
         s["step"] = "remove_input"
         return await e.edit(f"{PremiumEmojis.CLEAR} **Remove Account**\nSend phone number:\n`+919876543210`\n\n⚠️ Permanent!",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-    
+
     # ── Settings ──
     if data == "set":
         st = get_settings(uid)
         s["step"] = "set"
         return await e.edit(f"⚙️ **Settings**\nDelay: `{st['delay_min']}`–`{st['delay_max']}` sec\n\nSet new: `min-max` (eg `1-3`)",
                             buttons=[[Button.inline("« Back", b"menu")]], parse_mode="md")
-    
+
     # ── Leave Menu ──
     if data == "leave_menu":
         if not is_admin(uid):
@@ -1427,21 +1312,19 @@ async def cb(e):
                             buttons=[[Button.inline("📂 Show My Chats", b"list_chats")],
                                      [Button.inline("✍️ Manual", b"leave_manual")],
                                      [Button.inline("« Cancel", b"menu")]])
-    
+
     if data == "leave_manual":
         s["step"] = "camp_target"
         return await e.edit("🚪 Send @username or chat id:",
                             buttons=[[Button.inline("« Cancel", b"menu")]])
-    
+
     if data == "list_chats":
         accs = get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid)
         if not accs:
             return await e.edit("❌ Add account first.", buttons=[[Button.inline("« Back", b"menu")]])
-        
         c = await get_client(accs[0])
         if not c:
             return await e.edit("❌ Account dead.", buttons=[[Button.inline("« Back", b"menu")]])
-        
         dialogs = await c.get_dialogs(limit=25)
         btns = []
         for d in dialogs:
@@ -1449,7 +1332,7 @@ async def cb(e):
                 btns.append([Button.inline(f"🚪 {d.name[:30]}", f"doleave:{d.id}".encode())])
         btns.append([Button.inline("« Cancel", b"menu")])
         return await e.edit("📂 Click to leave:", buttons=btns)
-    
+
     if data.startswith("doleave:"):
         if not is_admin(uid):
             await e.answer(no_access(), alert=True)
@@ -1459,7 +1342,7 @@ async def cb(e):
         await e.answer(f"✅ {ok} left, ❌ {len(fail)} failed" if ok else
                        f"❌ Failed: {fail[0][:80] if fail else 'unknown'}", alert=True)
         return
-    
+
     # ── Campaign ──
     if data == "camp":
         if not is_admin(uid):
@@ -1472,7 +1355,7 @@ async def cb(e):
             btns.append([Button.inline(label, f"act:{key}".encode())])
         btns.append([Button.inline("« Back", b"menu")])
         return await e.edit("🚀 **New Campaign**\nSelect action:", buttons=btns, parse_mode="md")
-    
+
     if data.startswith("act:"):
         if not is_admin(uid):
             await e.answer(no_access(), alert=True)
@@ -1480,21 +1363,21 @@ async def cb(e):
         key = data[4:]
         s.clear()
         s["camp_action"] = key
-        
+
         if key in ("join", "join_request", "leave", "dm"):
             s["step"] = "camp_target"
             hints = {
-                "join": f"{PremiumEmojis.JOIN} **Join Channel**\n\nSend channel link or username:\n`@channel`\n`https://t.me/channel`\n`https://t.me/+invite_hash`\n\n💡 For private channels, use invite link",
-                "join_request": f"{PremiumEmojis.REQUEST} **Join Request**\n\nSend channel invite link:\n`https://t.me/+invite_hash`\n\n💡 Use this for private channels requiring approval",
+                "join": f"{PremiumEmojis.JOIN} **Join Channel**\n\nSend channel link or username:\n`@channel`\n`https://t.me/channel`\n`https://t.me/+invite_hash`\n\n💡 Private channels ke liye invite link use karo",
+                "join_request": f"{PremiumEmojis.REQUEST} **Join Request**\n\nSend channel invite link:\n`https://t.me/+invite_hash`\n\n💡 Approval-waale private channels ke liye",
                 "leave": f"{PremiumEmojis.CANCEL} **Leave**\nSend channel link or username",
                 "dm": f"{PremiumEmojis.SPEAKER} **DM**\nSend username or user id",
             }
             return await e.edit(hints[key], buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-        
+
         s["step"] = "camp_post"
-        return await e.edit(f"{PremiumEmojis.CHANNEL} **Post URL**\n\nSend the post URL:\n`https://t.me/channel/123`\n`https://t.me/c/1234567890/123`\n\n💡 For private channels, you'll need to provide channel link next",
+        return await e.edit(f"{PremiumEmojis.CHANNEL} **Post URL**\n\nSend the post URL:\n`https://t.me/channel/123`\n`https://t.me/c/1234567890/123`\n\n💡 Private channel ho to pehle Join campaign chalao",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-    
+
     # ── Run / Schedule ──
     if data == "run_now":
         if not is_admin(uid):
@@ -1508,7 +1391,7 @@ async def cb(e):
         reset(uid)
         return await e.edit("\n".join(lines), buttons=[[Button.inline("« Menu", b"menu")]],
                             parse_mode="md")
-    
+
     if data == "do_schedule":
         if not is_admin(uid):
             await e.answer(no_access(), alert=True)
@@ -1521,7 +1404,7 @@ async def cb(e):
         return await e.edit("📅 **Scheduled!**", buttons=[[Button.inline("« Menu", b"menu")]])
 
 # ==========================================================
-#  TEXT STEP HANDLER - FIXED
+#  TEXT STEP HANDLER
 # ==========================================================
 
 @bot.on(events.NewMessage())
@@ -1529,14 +1412,14 @@ async def steps(e):
     uid = e.sender_id
     if e.text and e.text.startswith("/"):
         return
-    
+
     s = state(uid)
     step = s.get("step")
     if not step:
         return
-    
+
     text = (e.text or "").strip()
-    
+
     # Phone + OTP
     if step == "add_phone_number":
         if not re.fullmatch(r"\+\d{6,15}", text):
@@ -1550,7 +1433,7 @@ async def steps(e):
         s["client"] = client
         s["step"] = "add_phone_otp"
         return await e.reply("🔢 Code sent! Send OTP (eg `1 2 3 4 5 6`)")
-    
+
     if step == "add_phone_otp":
         client = s.get("client")
         if not client:
@@ -1571,7 +1454,7 @@ async def steps(e):
         reset(uid)
         return await e.reply(f"✅ Added `{acc['phone']}` — {acc['name']}",
                              buttons=MAIN_MENU, parse_mode="md")
-    
+
     if step == "add_phone_password":
         client = s.get("client")
         try:
@@ -1581,8 +1464,7 @@ async def steps(e):
         acc = await save_session_account(client, uid)
         reset(uid)
         return await e.reply(f"✅ Added `{acc['phone']}`", buttons=MAIN_MENU, parse_mode="md")
-    
-    # Session string
+
     if step == "add_string_input":
         try:
             acc = await validate_session_string(text, uid)
@@ -1591,8 +1473,7 @@ async def steps(e):
         reset(uid)
         return await e.reply(f"✅ Added `{acc['phone']}` — {acc['name']}",
                              buttons=MAIN_MENU, parse_mode="md")
-    
-    # Bulk
+
     if step == "bulk_input":
         strings = [l.strip() for l in text.splitlines() if len(l.strip()) > 30]
         added, bad = 0, []
@@ -1607,8 +1488,7 @@ async def steps(e):
         if bad:
             msg += f"\n❌ {len(bad)} failed:\n" + "\n".join(f"· {b}" for b in bad[:10])
         return await e.reply(msg, buttons=MAIN_MENU, parse_mode="md")
-    
-    # Remove Account
+
     if step == "remove_input":
         phone = text if text.startswith("+") else "+" + text
         acc = next((a for a in my_accounts(uid) if a["phone"] == phone), None)
@@ -1624,8 +1504,7 @@ async def steps(e):
             os.remove(p)
         reset(uid)
         return await e.reply(f"🗑️ Removed `{phone}`", buttons=MAIN_MENU, parse_mode="md")
-    
-    # Settings
+
     if step == "set":
         m = re.fullmatch(r"([\d.]+)\s*-\s*([\d.]+)", text)
         if not m or float(m.group(1)) > float(m.group(2)):
@@ -1636,47 +1515,81 @@ async def steps(e):
         reset(uid)
         return await e.reply(f"✅ Delay set: `{st['delay_min']}`–`{st['delay_max']}`s",
                              buttons=MAIN_MENU, parse_mode="md")
-    
+
     # ── Campaign steps ──
     if step in ("camp_post", "camp_count", "camp_emoji", "camp_btn", "camp_target",
                 "camp_dm_text", "sched_time", "camp_poll_options", "camp_channel_target"):
         if not is_admin(uid):
             reset(uid)
             return await e.reply(no_access())
-        
-        # Initialize camp_opts if it doesn't exist
         if "camp_opts" not in s:
             s["camp_opts"] = {}
-    
+
     if step == "camp_post":
-        # Parse post URL
         parsed = parse_post_url(text)
         if not parsed:
-            return await e.reply("❌ Invalid post URL.\n\nFormat:\n`https://t.me/channel/123`\n`https://t.me/c/1234567890/123`", parse_mode="md")
-        
+            return await e.reply(
+                "❌ Invalid post URL.\n\nFormat:\n`https://t.me/channel/123` (public)\n`https://t.me/c/1234567890/123` (private)",
+                parse_mode="md")
+
         s["camp_opts"]["post_ref"] = parsed[0]
         s["camp_opts"]["msg_id"] = parsed[1]
+        s.pop("post_btns", None)
+        s.pop("post_poll", None)
+
+        # ── Post preview + button/poll picker ──
+        accs = get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid)
+        preview, btn_rows = "", []
+        if accs:
+            c0 = await get_client(accs[0])
+            if c0:
+                ent0 = await resolve_entity_cached(c0, parsed[0])
+                if not ent0:
+                    preview = ("\n\n⚠️ **Post is account se open nahi hua — private channel hai.**\n"
+                               "👉 Pehle **Join Campaign** chalao (invite link se), accounts channel me aa jaane ke "
+                               "baad ye react/vote campaign chalao.")
+                else:
+                    try:
+                        m0 = await c0.get_messages(ent0, ids=parsed[1])
+                        if m0:
+                            preview = f"\n\n📝 Post: {(m0.text or '(media)')[:80]}..."
+                            if getattr(m0, "buttons", None):
+                                s["post_btns"] = [b for row in m0.buttons for b in row]
+                                preview += f"\n🗳️ **{len(s['post_btns'])} inline buttons mile** — click karke select karo:"
+                                for i, b in enumerate(s["post_btns"], 1):
+                                    btn_rows.append([Button.inline(
+                                        f"{i}. {(b.text or '?')[:25]}",
+                                        f"pickbtn:{i}".encode())])
+                            elif getattr(m0, "poll", None):
+                                s["post_poll"] = [a.text for a in m0.poll.poll.answers]
+                                preview += "\n📊 **Poll detected!** Options:"
+                                for i, a in enumerate(s["post_poll"]):
+                                    preview += f"\n  `{i}`. {a}"
+                    except Exception as ex:
+                        preview = f"\n\n⚠️ Preview error: {str(ex)[:50]}"
+            else:
+                preview = "\n\n⚠️ Koi active account nahi mila preview ke liye."
+
         s["step"] = "camp_count"
-        total_accs = len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))
-        return await e.reply(f"🔢 **How many accounts to use?**\n\nAvailable: **{total_accs}**\n`0` = All available\n\n💡 This controls how many accounts will be used", parse_mode="md")
-    
+        total_accs = len(accs)
+        btn_rows.append([Button.inline("« Cancel", b"menu")])
+        return await e.reply(
+            f"🔢 **Kitne accounts use kare?**\n\nAvailable: **{total_accs}**\n`0` = All available{preview}",
+            buttons=btn_rows, parse_mode="md")
+
     if step == "camp_count":
         if not text.isdigit():
             return await e.reply("❌ Send a number (e.g. `50`). `0` means all available.", parse_mode="md")
         s["camp_opts"]["count"] = int(text)
-        
-        # Check if we need channel info for private posts
+
         action = s["camp_action"]
-        
-        # For join/leave actions, we already handled target
+
         if action in ("join", "join_request", "leave"):
-            # Check if we have target
             if "target" not in s["camp_opts"]:
                 s["step"] = "camp_target"
                 return await e.reply(f"📌 **Send channel target:**\n\nUsername: `@channel`\nInvite: `https://t.me/+invite_hash`\nID: `-1001234567890`", parse_mode="md")
             return await ask_run(e, uid)
-        
-        # For DM action
+
         if action == "dm":
             if "target" not in s["camp_opts"]:
                 s["step"] = "camp_target"
@@ -1685,34 +1598,35 @@ async def steps(e):
                 s["step"] = "camp_dm_text"
                 return await e.reply("✉️ **Send DM message:**\n\nType the message you want to send", parse_mode="md")
             return await ask_run(e, uid)
-        
-        # For reactions and votes
+
         if action in ("react", "react_vote", "react_vote_view"):
             s["step"] = "camp_emoji"
-            return await e.reply("😀 **Send emoji:**\n\nExample: `👍` `❤️` `🔥` or `🍀` for random\n\n💡 Premium emojis also supported", parse_mode="md")
-        
-        if action in ("vote", "poll_vote"):
-            if action == "poll_vote":
-                s["step"] = "camp_poll_options"
-                return await e.reply("📊 **Poll Options:**\n\nSend poll option numbers (comma separated):\n`0,1,2`\n(0 = first option, 1 = second…)", parse_mode="md")
-            else:
-                s["step"] = "camp_btn"
-                return await e.reply("🗳️ **Button Selection:**\n\nSend button number or button text:\n`1` (first button)\n`Vote` (button text)\n\n💡 Find the button number from the post", parse_mode="md")
-        
-        # For other actions
+            return await e.reply("😀 **Emoji bhejo:** `👍` `❤️` `🔥` ya `🍀` (random)\n\n💡 Post pe jo reactions allowed hain wahi chalenge", parse_mode="md")
+
+        if action == "vote":
+            # Picker se button already selected? Skip.
+            if s["camp_opts"].get("btn_index") or s["camp_opts"].get("btn_text"):
+                return await ask_run(e, uid)
+            s["step"] = "camp_btn"
+            return await e.reply("🗳️ Button ka **number** ya **text** bhejo:\n`1` / `Vote Now`", parse_mode="md")
+
+        if action == "poll_vote":
+            s["step"] = "camp_poll_options"
+            return await e.reply("📊 Poll option numbers bhejo (comma separated):\n`0,1,2`\n(0 = pehla option)", parse_mode="md")
+
         return await ask_run(e, uid)
-    
+
     if step == "camp_emoji":
         if not text.strip():
             return await e.reply("❌ Send an emoji!")
         s["camp_opts"]["emoji"] = text.strip()
-        
         if s["camp_action"] in ("react_vote", "react_vote_view"):
+            if s["camp_opts"].get("btn_index") or s["camp_opts"].get("btn_text"):
+                return await ask_run(e, uid)
             s["step"] = "camp_btn"
-            return await e.reply("🗳️ **Vote Button:**\n\nSend button number or text:\n`1` or `Vote Now`", parse_mode="md")
-        
+            return await e.reply("🗳️ Button number/text bhejo: `1` / `Vote Now`", parse_mode="md")
         return await ask_run(e, uid)
-    
+
     if step == "camp_btn":
         if text.isdigit():
             s["camp_opts"]["btn_index"] = int(text)
@@ -1721,45 +1635,40 @@ async def steps(e):
             s["camp_opts"]["btn_index"] = None
             s["camp_opts"]["btn_text"] = text
         return await ask_run(e, uid)
-    
+
     if step == "camp_poll_options":
         options = [x.strip() for x in text.split(',') if x.strip().isdigit()]
         if not options:
-            return await e.reply("❌ Invalid. Use: `0,1,2`\n(0 = first option, 1 = second…)", parse_mode="md")
+            return await e.reply("❌ Invalid. Use: `0,1,2`\n(0 = pehla option, 1 = doosra…)", parse_mode="md")
         s["camp_opts"]["poll_options"] = [int(x) for x in options]
         return await ask_run(e, uid)
-    
+
     if step == "camp_target":
-        # Parse target (for join, leave, dm)
         parsed = parse_join_target(text)
         if not parsed:
             return await e.reply("❌ Invalid target.\n\nFormat:\n`@channel`\n`https://t.me/+invite_hash`\n`https://t.me/channel`\n`-1001234567890`", parse_mode="md")
-        
-        # Initialize camp_opts if it doesn't exist
+
         if "camp_opts" not in s:
             s["camp_opts"] = {}
-        
         s["camp_opts"]["target"] = parsed
-        
-        # For DM, ask for message
+
         if s["camp_action"] == "dm":
             s["step"] = "camp_dm_text"
             return await e.reply("✉️ **Send DM message:**\n\nType the message you want to send", parse_mode="md")
-        
-        # For join actions, check if we need to ask for count
+
         if s["camp_action"] in ("join", "join_request", "leave"):
             s["step"] = "camp_count"
             total_accs = len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))
-            return await e.reply(f"🔢 **How many accounts to use?**\n\nAvailable: **{total_accs}**\n`0` = All available\n\n💡 This controls how many accounts will be used", parse_mode="md")
-        
+            return await e.reply(f"🔢 **Kitne accounts use kare?**\n\nAvailable: **{total_accs}**\n`0` = All available", parse_mode="md")
+
         return await ask_run(e, uid)
-    
+
     if step == "camp_dm_text":
         s["camp_opts"]["dm_text"] = text
         s["step"] = "camp_count"
         total_accs = len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))
-        return await e.reply(f"🔢 **How many accounts to use?**\n\nAvailable: **{total_accs}**\n`0` = All available", parse_mode="md")
-    
+        return await e.reply(f"🔢 **Kitne accounts use kare?**\n\nAvailable: **{total_accs}**\n`0` = All available", parse_mode="md")
+
     if step == "sched_time":
         m = re.fullmatch(r"(\d+)([mhd])", text.lower())
         if not m:
@@ -1772,12 +1681,11 @@ async def steps(e):
                                       [Button.inline("❌ Cancel", b"menu")]])
 
 async def ask_run(e, uid):
-    """Ask user to run or schedule the campaign"""
     s = state(uid)
     s["step"] = None
     label = dict(ACTIONS).get(s["camp_action"], s["camp_action"])
     opts = s.get("camp_opts", {})
-    
+
     summary = f"🚀 **Campaign Ready**\n\nAction: **{label}**\n"
     if "post_ref" in opts:
         summary += f"Post ID: `{opts['msg_id']}`\n"
@@ -1799,9 +1707,9 @@ async def ask_run(e, uid):
         summary += f"Message: {opts['dm_text'][:60]}\n"
     if "poll_options" in opts:
         summary += f"Poll Options: {opts['poll_options']}\n"
-    
+
     summary += f"\n📊 Available Accounts: **{len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))}**"
-    
+
     await e.reply(summary, parse_mode="md")
     await e.reply("▶️ **Run now or schedule?**",
                   buttons=[[Button.inline("▶️ Run Now", b"run_now"),
@@ -1836,21 +1744,19 @@ async def txt_upload(e):
 
 async def main():
     load_scheduled()
-    
-    # Preload clients
+
     print("[VoteFlow] Preloading accounts...")
-    for acc in accounts[:10]:  # Load first 10 only
+    for acc in accounts[:10]:
         try:
             await get_client(acc)
         except Exception as ex:
             print(f"[load] {acc['phone']}: {ex}")
-    
-    # Start scheduler
+
     asyncio.create_task(scheduler_loop(bot))
-    
+
     print(f"[VoteFlow] Running. Accounts: {len(accounts)}, Admins: {len(admins)+1}, Scheduled: {len(scheduled)}")
     print(f"[VoteFlow] Admin Limits active: {sum(1 for a in admins if a.get('limit', 0) > 0)} admins have limits")
-    
+
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
