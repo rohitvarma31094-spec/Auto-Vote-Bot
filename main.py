@@ -23,23 +23,18 @@ import config
 os.makedirs(config.SESSIONS_DIR, exist_ok=True)
 LOCK = threading.Lock()
 
-# ══════════════════════════════════════════════════════════
-#  EMOJIS
-#  NOTE: Bots custom/premium emoji SEND nahi kar sakte (Premium
-#  feature hai, server bot ke messages se custom emoji hata deta
-#  hai). Isliye unicode emojis use kiye — ye SABKO dikhte hain,
-#  har device pe colorful. Raw "<emoji id=...>" text ka problem
-#  permanently fix ho gaya.
-# ══════════════════════════════════════════════════════════
+# ==========================================================
+#  PREMIUM EMOJIS (Unicode - works on all devices)
+# ==========================================================
 
 class PremiumEmojis:
-    VOTE = "🗳"          ; JOIN = "➕"          ; CANCEL = "❌"
+    VOTE = "🗳️"          ; JOIN = "➕"          ; CANCEL = "❌"
     MAIN_MENU = "🏠"     ; BACK = "🔙"          ; CREATE = "🚀"
-    CONNECT = "🔗"       ; MANAGE = "🛠"        ; ADD_VOTES = "➕"
+    CONNECT = "🔗"       ; MANAGE = "🛠️"        ; ADD_VOTES = "➕"
     REMOVE_VOTES = "➖"  ; LEADERBOARD = "🏆"   ; END_GIVEAWAY = "🏁"
     ADMIN = "👑"         ; BROADCAST = "📢"     ; STATS = "📊"
     SETTINGS = "⚙️"      ; USERS = "👥"         ; BACKUP = "💾"
-    CLEAR = "🗑"         ; CHANNEL = "📡"       ; NOTIFICATION = "🔔"
+    CLEAR = "🗑️"         ; CHANNEL = "📡"       ; NOTIFICATION = "🔔"
     CONFIRM = "✅"       ; REFRESH = "🔄"       ; WELCOME = "👋"
     FIRE = "🔥"          ; ARROW = "➡️"         ; CHART = "📈"
     HEART = "❤️"         ; ROCKET = "🚀"        ; CROWN = "👑"
@@ -51,12 +46,9 @@ class PremiumEmojis:
     CONFETTI = "🎉"      ; LOCATION = "📍"      ; RIGHT = "✔️"
     DIAMOND = "💎"       ; CALENDAR = "📅"      ; WINNER = "🏅"
     MONEY_BAG = "💰"     ; CELEBRATE = "🎊"     ; INBOX = "📥"
-    LOCK = "🔒"          ; SHIELD = "🛡"        ; JOIN_CHANNEL = "📨"
+    LOCK = "🔒"          ; SHIELD = "🛡️"        ; JOIN_CHANNEL = "📨"
     JOINED = "✔️"        ; EXPORT = "📤"        ; IMPORT = "📥"
 
-    # Reaction: unicode emoji -> custom_emoji_id (sirf tab kaam
-    # karega jab VOTING ACCOUNT khud Premium ho; warna fallback
-    # normal reaction chalega — dono handled)
     REACTION_EMOJIS = {
         "🔥": "6334449730734529256", "❤️": "6237558987978447573",
         "⭐": "6239815031219820750", "💎": "6240003971126139705",
@@ -68,11 +60,9 @@ class PremiumEmojis:
         "✨": "6240085923397114865",
     }
 
-# ══════════════════════════════════════════════════════════
-#  STORAGE - PERSISTENT DATA (NEVER LOST)
-#  FIX: Atomic save (.tmp + os.replace) — restart/crash ke
-#  waqt JSON corrupt nahi hoga.
-# ══════════════════════════════════════════════════════════
+# ==========================================================
+#  STORAGE - PERSISTENT DATA
+# ==========================================================
 
 def jload(path, default):
     d = os.path.dirname(path)
@@ -87,7 +77,6 @@ def jload(path, default):
             with open(path) as f:
                 return json.load(f)
     except Exception:
-        # corrupted file -> backup + default
         try:
             os.replace(path, path + ".corrupt")
         except Exception:
@@ -99,7 +88,7 @@ def jsave(path, data):
     with LOCK:
         with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
-        os.replace(tmp, path)   # atomic — data kabhi corrupt nahi
+        os.replace(tmp, path)
 
 accounts  = jload(config.ACCOUNTS_FILE, [])
 admins    = jload(config.ADMINS_FILE, [])
@@ -111,9 +100,7 @@ def save_admins():    jsave(config.ADMINS_FILE, admins)
 def save_settings():  jsave(config.SETTINGS_FILE, settings)
 def save_campaigns(): jsave(config.CAMPAIGNS_FILE, campaigns)
 
-# ─── Scheduled campaigns (PERSISTENT) ───
 scheduled = []
-
 def load_scheduled():
     global scheduled
     try:
@@ -131,9 +118,9 @@ def save_scheduled():
     except Exception as ex:
         print(f"[scheduled] save error: {ex}")
 
-# ══════════════════════════════════════════════════════════
-#  ACCESS CONTROL
-# ══════════════════════════════════════════════════════════
+# ==========================================================
+#  ACCESS CONTROL (WITH ADMIN LIMIT)
+# ==========================================================
 
 def is_owner(uid):
     return uid in config.OWNER_IDS
@@ -141,11 +128,26 @@ def is_owner(uid):
 def is_admin(uid):
     return is_owner(uid) or uid in admins
 
-def my_accounts(uid):
-    return [a for a in accounts if a.get("owner") == uid]
+def get_user_limit(uid):
+    # Owner = Unlimited, Admin = Limit from config
+    if is_owner(uid):
+        return float('inf')
+    if is_admin(uid):
+        return getattr(config, 'ADMIN_ACCOUNT_LIMIT', 100)
+    return 0
+
+def my_accounts(uid, limit=None):
+    user_accs = [a for a in accounts if a.get("owner") == uid]
+    if limit is None:
+        limit = get_user_limit(uid)
+    return user_accs[:limit]
 
 def get_total_accounts():
     return len(accounts)
+
+# ==========================================================
+#  USER STATE & CLIENTS
+# ==========================================================
 
 user_state = {}
 clients = {}
@@ -158,33 +160,6 @@ def reset(uid):
 
 def get_settings(uid):
     return settings.setdefault(str(uid), {"delay_min": 1.0, "delay_max": 2.5})
-
-# ══════════════════════════════════════════════════════════
-#  REACTION HELPER (FIXED)
-# ══════════════════════════════════════════════════════════
-
-async def send_premium_reaction(c, ent, msg_id, emoji):
-    custom_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
-    if custom_id:
-        try:
-            await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(
-                emoticon=emoji, custom_emoji_id=int(custom_id)))
-            return True
-        except Exception:
-            pass  # account premium nahi -> normal emoji fallback
-    try:
-        await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(emoticon=emoji))
-        return True
-    except Exception:
-        try:
-            await c.send_read_acknowledge(ent, msg_id)
-        except Exception:
-            pass
-        return False
-
-# ══════════════════════════════════════════════════════════
-#  CLIENTS
-# ══════════════════════════════════════════════════════════
 
 async def get_client(acc):
     phone = acc["phone"]
@@ -225,22 +200,25 @@ async def validate_session_string(s, owner):
     return await save_session_account(c, owner)
 
 async def check_status(uid):
-    total, active, expired = len(my_accounts(uid)), 0, 0
-    for a in my_accounts(uid):
+    user_accs = my_accounts(uid)
+    total = len(user_accs)
+    active, expired = 0, []
+    
+    for a in user_accs:
         c = await get_client(a)
         if c is None:
-            expired += 1
+            expired.append(f"{a['phone']} ({a.get('name','?')}) - Session Expired")
         else:
             try:
                 await c.get_me()
                 active += 1
-            except Exception:
-                expired += 1
+            except Exception as e:
+                expired.append(f"{a['phone']} ({a.get('name','?')}) - {str(e)[:20]}")
     return total, active, expired
 
-# ══════════════════════════════════════════════════════════
-#  PARSING
-# ══════════════════════════════════════════════════════════
+# ==========================================================
+#  PARSING & ENTITY RESOLUTION
+# ==========================================================
 
 POST_RE = re.compile(r"(?:https?://)?t\.me/(?:c/(\d+)/(\d+)|([A-Za-z0-9_]{4,})/(\d+))", re.I)
 
@@ -277,10 +255,6 @@ async def resolve_entity(client, ref):
         return await client.get_entity(PeerChannel(cid))
     return None
 
-# ══════════════════════════════════════════════════════════
-#  ENTITY CACHE
-# ══════════════════════════════════════════════════════════
-
 entity_cache = {}
 
 async def resolve_entity_cached(client, ref):
@@ -291,22 +265,36 @@ async def resolve_entity_cached(client, ref):
     entity_cache[key] = {'entity': entity, 'expires': time.time() + 3600}
     return entity
 
-# ══════════════════════════════════════════════════════════
-#  CAMPAIGN WORKERS
-# ══════════════════════════════════════════════════════════
+# ==========================================================
+#  CAMPAIGN WORKERS (WITH COUNT LOGIC)
+# ==========================================================
 
 RANDOM_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👏", "😍", "💯", "⭐", "✨", "💪", "🤩", "🙌", "👑", "💎", "🚀"]
 
-# FIX: pehle 'msg' undefined variable tha (NameError) — ab msg_id
-# directly pass hota hai. Custom emoji reaction tabhi jab account
-# premium ho, warna automatic normal emoji fallback.
+async def send_premium_reaction(c, ent, msg_id, emoji):
+    custom_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
+    if custom_id:
+        try:
+            await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(
+                emoticon=emoji, custom_emoji_id=int(custom_id)))
+            return True
+        except Exception:
+            pass
+    try:
+        await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(emoticon=emoji))
+        return True
+    except Exception:
+        try:
+            await c.send_read_acknowledge(ent, msg_id)
+        except Exception:
+            pass
+        return False
+
 async def do_react(c, ent, msg_id, emoji):
     if emoji and emoji.lower() in ["random", "rand", "r", "🍀"]:
         emoji = random.choice(RANDOM_EMOJIS)
     return await send_premium_reaction(c, ent, msg_id, emoji)
 
-# FIX: Inline vote button — btn.click() fail ho to raw
-# GetBotCallbackAnswerRequest se vote karta hai.
 async def do_vote(c, ent, msg_id, btn_index, btn_text):
     msg = await c.get_messages(ent, ids=msg_id)
     if not msg.buttons:
@@ -333,9 +321,6 @@ async def do_vote(c, ent, msg_id, btn_index, btn_text):
             return True
         raise
 
-# FIX: Poll vote — ab poll ke ACTUAL answer bytes use hote hain
-# (pehle raw index bytes bhej raha tha jo kaafi polls pe fail
-# hota tha). Range check bhi add kiya.
 async def do_poll_vote(c, ent, msg_id, poll_option_ids):
     msg = await c.get_messages(ent, ids=msg_id)
     if not msg.poll:
@@ -381,22 +366,32 @@ async def do_dm(c, target, text):
     return True
 
 async def run_campaign(uid, action, opts):
-    accs = my_accounts(uid)
+    # Count check karo
+    count = int(opts.get("count", 0))
+    if count <= 0:
+        accs = my_accounts(uid) 
+    else:
+        accs = my_accounts(uid)[:count]
+    
     if not accs:
-        return 0, ["No accounts found."]
+        return 0, ["No accounts found or Limit reached."]
+    
     random.shuffle(accs)
     st = get_settings(uid)
     ok, fail = 0, []
+    
     post_ref, msg_id = opts.get("post_ref"), opts.get("msg_id")
     target, emoji = opts.get("target"), opts.get("emoji")
     bi, bt = opts.get("btn_index"), opts.get("btn_text")
     poll_options = opts.get("poll_options", [])
+    
     ent = None
     if post_ref:
         first_acc = await get_client(accs[0])
         if first_acc is None:
             return 0, ["First account not available"]
         ent = await resolve_entity_cached(first_acc, post_ref)
+        
     for acc in accs:
         try:
             c = await get_client(acc)
@@ -434,6 +429,7 @@ async def run_campaign(uid, action, opts):
         except Exception as e:
             fail.append(f"{acc['phone']}: {type(e).__name__}: {str(e)[:50]}")
         await asyncio.sleep(random.uniform(st["delay_min"], st["delay_max"]))
+        
     campaigns.append({"owner": uid, "action": action, "ok": ok, "fail": len(fail),
                       "time": time.strftime("%d-%m %H:%M"), "total": len(accs)})
     save_campaigns()
@@ -456,9 +452,9 @@ async def scheduler_loop(bot):
                 print(f"[scheduler] {e}")
         await asyncio.sleep(5)
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 #  BOT
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 bot = TelegramClient(os.path.join(config.SESSIONS_DIR, "control_bot"),
                      config.API_ID, config.API_HASH).start(bot_token=config.BOT_TOKEN)
@@ -476,8 +472,6 @@ ACTIONS = [
     ("dm",              f"{PremiumEmojis.SPEAKER} DM"),
 ]
 
-# FIX: Buttons me plain unicode emoji — ab saaf dikhega,
-# raw "<emoji id=...>" text nahi aayega.
 MAIN_MENU = [
     [Button.inline(f"{PremiumEmojis.ID} My Account", b"myacc"),
      Button.inline(f"{PremiumEmojis.CONNECT} Add Account", b"add")],
@@ -493,20 +487,32 @@ MAIN_MENU = [
 ]
 
 def menu_text(uid):
-    total = get_total_accounts()
     my = len(my_accounts(uid))
-    return (f"{PremiumEmojis.CROWN} **╔═══ VOTEFLOW BOT ═══╗**\n\n"
-            f"{PremiumEmojis.CHART} **Global Stats:**\n"
+    limit = get_user_limit(uid)
+    limit_text = "Unlimited" if is_owner(uid) else (f"{limit}" if is_admin(uid) else "0")
+    
+    text = (f"{PremiumEmojis.CROWN} **╔═══ VOTEFLOW BOT ═══╗**\n\n"
+            f"{PremiumEmojis.STATS} **Your Stats:**\n"
             f"┌──────────────────────┐\n"
-            f"│ Total Accounts: **{total}**\n"
             f"│ Your Accounts: **{my}**\n"
+            f"│ Your Limit: **{limit_text}**\n"
             f"└──────────────────────┘\n\n"
             f"{PremiumEmojis.LOCK} **Access:** **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n")
+    
+    # Global Stat sirf Owner ko dikhega
+    if is_owner(uid):
+        text += (f"{PremiumEmojis.CHART} **Global Stats:**\n"
+                 f"Total Accounts: **{get_total_accounts()}**\n"
+                 f"Total Users: **{len(set(a.get('owner') for a in accounts))}**\n")
+    
+    return text
 
 def no_access():
     return (f"{PremiumEmojis.ALERT} **Access Denied!**\nOnly Owner/Admins can run campaigns.")
 
-# ── COMMANDS ──
+# ==========================================================
+#  COMMANDS
+# ==========================================================
 
 @bot.on(events.NewMessage(pattern="^/(start|menu|help)$"))
 async def cmd_start(e):
@@ -517,7 +523,7 @@ async def cmd_start(e):
 async def cmd_me(e):
     total, active, expired = await check_status(e.sender_id)
     await e.reply(f"{PremiumEmojis.ID} **My Profile**\n"
-                  f"ID: `{e.sender_id}`\nAccounts: {total} | Active: {active} | Expired: {expired}", parse_mode="md")
+                  f"ID: `{e.sender_id}`\nAccounts: {total} | Active: {active} | Expired: {len(expired)}", parse_mode="md")
 
 @bot.on(events.NewMessage(pattern="^/addadmin(@\w+)?(\s+.*)?$"))
 async def cmd_addadmin(e):
@@ -541,8 +547,8 @@ async def cmd_addadmin(e):
     if is_admin(target_id):
         return await e.reply(f"ℹ️ `{target_id}` is already admin.", parse_mode="md")
     admins.append(target_id)
-    save_admins()          # PERSISTENT — restart pe bhi rahega
-    await e.reply(f"✅ **`{target_id}` is now Admin!**", parse_mode="md")
+    save_admins()
+    await e.reply(f"✅ **`{target_id}` is now Admin!** (Limit: {config.ADMIN_ACCOUNT_LIMIT} accounts)", parse_mode="md")
     try:
         await bot.send_message(target_id, "🎉 You got **Admin access**! Use /start")
     except Exception:
@@ -564,7 +570,7 @@ async def cmd_rmadmin(e):
         return await e.reply("ℹ️ This user is not admin.", parse_mode="md")
     admins.remove(target_id)
     save_admins()
-    await e.reply(f"🗑 Admin revoked for `{target_id}`.", parse_mode="md")
+    await e.reply(f"🗑️ Admin revoked for `{target_id}`.", parse_mode="md")
 
 @bot.on(events.NewMessage(pattern="^/adminlist$"))
 async def cmd_adminlist(e):
@@ -581,7 +587,9 @@ async def cmd_adminlist(e):
             lines.append(f"· `{a}` — (unknown)")
     await e.reply("\n".join(lines), parse_mode="md")
 
-# ── CALLBACK ROUTER ───────────────────────────────────────
+# ==========================================================
+#  CALLBACK ROUTER
+# ==========================================================
 
 @bot.on(events.CallbackQuery())
 async def cb(e):
@@ -593,12 +601,12 @@ async def cb(e):
         reset(uid)
         return await e.edit(menu_text(uid), buttons=MAIN_MENU, parse_mode="md")
 
-    # ── Owner Panel ──
+    # ── Owner Panel (Owner Only) ──
     if data == "owner_panel":
         if not is_owner(uid):
             return await e.answer("⛔ Owner Only!", alert=True)
         total_users = len(set(a.get("owner") for a in accounts))
-        lines = [f"👑 **Owner Panel**\nAccounts: {len(accounts)}\nUsers: {total_users}\nAdmins: {len(admins)}"]
+        lines = [f"👑 **Owner Panel**\nGlobal Accounts: {len(accounts)}\nUsers: {total_users}\nAdmins: {len(admins)}"]
         if admins:
             lines.append("\n**Admins:**")
             for a in admins:
@@ -612,29 +620,34 @@ async def cb(e):
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
 
-    # ── My Account ──
+    # ── My Account (With Expired details) ──
     if data == "myacc" or data == "profile":
         total, active, expired = await check_status(uid)
         accs = my_accounts(uid)
-        lines = [f"🧑‍💼 **My Profile**\nID: `{uid}`\nAccess: **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n"]
-        lines.append(f"📊 Accounts: {total} | Active: {active} | Expired: {expired}")
+        lines = [f"🧑‍💼 **My Profile**\nID: `{uid}`\nAccess: **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**"]
+        lines.append(f"📊 Accounts: {total} | Active: {active} | Expired: {len(expired)}")
+        
         if accs:
-            lines.append("\n**Accounts:**")
-            for a in accs[:20]:
-                alive = "🟢" if a["phone"] in clients and clients[a["phone"]].is_connected() else "🔴"
-                lines.append(f"{alive} `{a['phone']}` — {a.get('name','?')}")
-            if len(accs) > 20:
-                lines.append(f"… +{len(accs)-20} more")
+            lines.append("\n**Active/Connected Accounts:**")
+            for a in accs:
+                if a["phone"] in clients:
+                    lines.append(f"🟢 `{a['phone']}` — {a.get('name','?')}")
+            
+            if expired:
+                lines.append("\n❌ **Expired/Failed Accounts:**")
+                for exp in expired:
+                    lines.append(f"🔴 `{exp}`")
         else:
             lines.append("\nNo accounts.")
+            
         return await e.edit("\n".join(lines), parse_mode="md",
                             buttons=[[Button.inline("« Back", b"menu")]])
 
-    # ── My Status ──
+    # ── My Status (With Expired details) ──
     if data == "mystat":
         total, active, expired = await check_status(uid)
         myc = [c for c in campaigns if c["owner"] == uid]
-        lines = [f"📊 **My Status**\nAccounts: {total} | Active: {active} | Expired: {expired}",
+        lines = [f"📊 **My Status**\nAccounts: {total} | Active: {active} | Expired: {len(expired)}",
                  f"Campaigns: {len(myc)} | Scheduled: {len([x for x in scheduled if x['owner']==uid])}"]
         if myc:
             lines.append("\n**Last 5:**")
@@ -815,11 +828,13 @@ async def cb(e):
         s = state(uid)
         scheduled.append({"run_at": time.time() + s["sched_delay"], "owner": uid,
                           "action": s["camp_action"], "opts": s["camp_opts"]})
-        save_scheduled()      # PERSISTENT — restart pe bhi chalega
+        save_scheduled()
         reset(uid)
         return await e.edit("📅 **Scheduled!**", buttons=[[Button.inline("« Menu", b"menu")]])
 
-# ── TEXT STEP HANDLER ──
+# ==========================================================
+#  TEXT STEP HANDLER
+# ==========================================================
 
 @bot.on(events.NewMessage())
 async def steps(e):
@@ -918,7 +933,7 @@ async def steps(e):
         if os.path.exists(p):
             os.remove(p)
         reset(uid)
-        return await e.reply(f"🗑 Removed `{phone}`", buttons=MAIN_MENU, parse_mode="md")
+        return await e.reply(f"🗑️ Removed `{phone}`", buttons=MAIN_MENU, parse_mode="md")
 
     # Settings
     if step == "set":
@@ -933,7 +948,7 @@ async def steps(e):
                              buttons=MAIN_MENU, parse_mode="md")
 
     # ── Campaign steps ──
-    if step in ("camp_post", "camp_emoji", "camp_btn", "camp_target",
+    if step in ("camp_post", "camp_count", "camp_emoji", "camp_btn", "camp_target",
                 "camp_dm_text", "sched_time", "camp_poll_options"):
         if not is_admin(uid):
             reset(uid)
@@ -951,12 +966,23 @@ async def steps(e):
 
         s["camp_opts"] = {"post_ref": parsed[0], "msg_id": parsed[1]}
         action = s["camp_action"]
+        
+        # Count Step
+        s["step"] = "camp_count"
+        return await e.reply(f"🔢 How many accounts to use?\n(Available: {len(my_accounts(uid))} | 0 = Max Limit)", parse_mode="md")
+
+    if step == "camp_count":
+        if not text.isdigit():
+            return await e.reply("❌ Send a number (e.g. `50`). `0` means max.", parse_mode="md")
+        s["camp_opts"]["count"] = int(text)
+        
+        action = s["camp_action"]
         if action in ("react", "react_vote", "react_vote_view"):
             s["step"] = "camp_emoji"
             return await e.reply("😀 Send emoji: `👍` `❤️` `🔥` or `🍀` for random", parse_mode="md")
         if action == "vote":
             s["step"] = "camp_btn"
-            return await e.reply("🗳 Send button number or text:", parse_mode="md")
+            return await e.reply("🗳️ Send button number or text:", parse_mode="md")
         return await ask_run(e, uid)
 
     if step == "camp_emoji":
@@ -965,7 +991,7 @@ async def steps(e):
         s["camp_opts"]["emoji"] = text.strip()
         if s["camp_action"] in ("react_vote", "react_vote_view"):
             s["step"] = "camp_btn"
-            return await e.reply("🗳 Send button (number or text):")
+            return await e.reply("🗳️ Send button (number or text):")
         return await ask_run(e, uid)
 
     if step == "camp_btn":
@@ -1015,6 +1041,8 @@ async def ask_run(e, uid):
     summary = f"🚀 **Campaign Ready**\n\nAction: **{label}**\n"
     if "post_ref" in opts:
         summary += f"Post ID: `{opts['msg_id']}`\n"
+    if "count" in opts:
+        summary += f"Accounts to use: `{opts['count']}` (0=Max)\n"
     if "emoji" in opts:
         emoji_display = "🍀 Random" if opts['emoji'].lower() in ["random", "rand", "r", "🍀"] else opts['emoji']
         summary += f"Emoji: {emoji_display}\n"
@@ -1055,9 +1083,9 @@ async def txt_upload(e):
     e.text = data.decode("utf-8", errors="ignore")
     await steps(e)
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 #  MAIN
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 async def main():
     load_scheduled()
