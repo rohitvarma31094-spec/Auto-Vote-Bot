@@ -1521,7 +1521,7 @@ async def cb(e):
         return await e.edit("📅 **Scheduled!**", buttons=[[Button.inline("« Menu", b"menu")]])
 
 # ==========================================================
-#  TEXT STEP HANDLER - ENHANCED
+#  TEXT STEP HANDLER - FIXED
 # ==========================================================
 
 @bot.on(events.NewMessage())
@@ -1643,6 +1643,10 @@ async def steps(e):
         if not is_admin(uid):
             reset(uid)
             return await e.reply(no_access())
+        
+        # Initialize camp_opts if it doesn't exist
+        if "camp_opts" not in s:
+            s["camp_opts"] = {}
     
     if step == "camp_post":
         # Parse post URL
@@ -1650,7 +1654,8 @@ async def steps(e):
         if not parsed:
             return await e.reply("❌ Invalid post URL.\n\nFormat:\n`https://t.me/channel/123`\n`https://t.me/c/1234567890/123`", parse_mode="md")
         
-        s["camp_opts"] = {"post_ref": parsed[0], "msg_id": parsed[1]}
+        s["camp_opts"]["post_ref"] = parsed[0]
+        s["camp_opts"]["msg_id"] = parsed[1]
         s["step"] = "camp_count"
         total_accs = len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))
         return await e.reply(f"🔢 **How many accounts to use?**\n\nAvailable: **{total_accs}**\n`0` = All available\n\n💡 This controls how many accounts will be used", parse_mode="md")
@@ -1729,6 +1734,10 @@ async def steps(e):
         parsed = parse_join_target(text)
         if not parsed:
             return await e.reply("❌ Invalid target.\n\nFormat:\n`@channel`\n`https://t.me/+invite_hash`\n`https://t.me/channel`\n`-1001234567890`", parse_mode="md")
+        
+        # Initialize camp_opts if it doesn't exist
+        if "camp_opts" not in s:
+            s["camp_opts"] = {}
         
         s["camp_opts"]["target"] = parsed
         
