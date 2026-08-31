@@ -1,38 +1,17 @@
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+API_ID = int(os.environ.get("API_ID", 12345678))
+API_HASH = os.environ.get("API_HASH", "your_api_hash_here")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "123456:ABC-your-bot-token")
 
-class Config:
-    API_ID = int(os.getenv("API_ID"))
-    API_HASH = os.getenv("API_HASH")
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    MONGO_URI = os.getenv("MONGO_URI")
-    OWNER_ID = int(os.getenv("OWNER_ID"))
-    SESSION_FOLDER = "sessions"  # local .session backup
+OWNER_ID = int(os.environ.get("OWNER_ID", 123456789))
 
-    # Premium emoji mapping (used in text formatting)
-    PREMIUM_EMOJIS = {
-        "sparkle": "✨",
-        "green_tick": "✅",
-        "red_cross": "❌",
-        "warning": "⚠️",
-        "star": "⭐",
-        "fire": "🔥",
-        "crown": "👑",
-        "gear": "⚙️",
-        "chart": "📊",
-        "user": "👤",
-        "group": "👥",
-        "link": "🔗",
-        "clock": "⏰",
-        "lock": "🔒",
-        "unlock": "🔓",
-        "error": "🚫",
-        "info": "ℹ️",
-        "button_join": "🟢",
-        "button_leave": "🔴",
-        "button_vote": "🟣",
-        "button_react": "🔵",
-        "button_settings": "🟡",
-    }
+DATA_DIR = "data"
+SESSIONS_DIR = f"{DATA_DIR}/sessions"
+ACCOUNTS_FILE = f"{DATA_DIR}/accounts.json"
+ADMINS_FILE = f"{DATA_DIR}/admins.json"
+SETTINGS_FILE = f"{DATA_DIR}/settings.json"
+CAMPAIGNS_FILE = f"{DATA_DIR}/campaigns.json"
+
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(SESSIONS_DIR, exist_ok=True)

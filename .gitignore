@@ -1,5 +1,15 @@
-venv/
-sessions/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.session
+*.session-journal
+data/
 .env
+venv/
+env/
+ENV/
+.venv
+*.log
+.DS_Store
