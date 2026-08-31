@@ -39,10 +39,10 @@ def jsave(path, data):
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
 
-accounts  = jload(config.ACCOUNTS_FILE, [])   # [{phone,name,string,id,owner}]
-admins    = jload(config.ADMINS_FILE, [])     # [user_id,...] owner-granted
-settings  = jload(config.SETTINGS_FILE, {})   # {uid:{delay_min,delay_max}}
-campaigns = jload(config.CAMPAIGNS_FILE, [])  # history
+accounts  = jload(config.ACCOUNTS_FILE, [])
+admins    = jload(config.ADMINS_FILE, [])
+settings  = jload(config.SETTINGS_FILE, {})
+campaigns = jload(config.CAMPAIGNS_FILE, [])
 
 def save_accounts():  jsave(config.ACCOUNTS_FILE, accounts)
 def save_admins():    jsave(config.ADMINS_FILE, admins)
@@ -51,12 +51,11 @@ def save_campaigns(): jsave(config.CAMPAIGNS_FILE, campaigns)
 
 # ─── Scheduled campaigns persistence ───
 scheduled = []
-SCHEDULED_FILE = "scheduled.json"
 
 def load_scheduled():
     global scheduled
     try:
-        with open(SCHEDULED_FILE) as f:
+        with open(config.SCHEDULED_FILE) as f:
             scheduled = json.load(f)
     except FileNotFoundError:
         scheduled = []
@@ -66,21 +65,11 @@ def load_scheduled():
 
 def save_scheduled():
     try:
-        with open(SCHEDULED_FILE, "w") as f:
+        with open(config.SCHEDULED_FILE, "w") as f:
             json.dump(scheduled, f)
     except Exception as ex:
         print(f"[scheduled] save error: {ex}")
 
-# scheduled ko file se load karo
-def load_scheduled():
-    global scheduled
-    if os.path.exists(config.SCHEDULED_FILE):
-        with open(config.SCHEDULED_FILE) as f:
-            scheduled = json.load(f)
-
-def save_scheduled():
-    with open(config.SCHEDULED_FILE, "w") as f:
-        json.dump(scheduled, f)
 
 # ══════════════════════════════════════════════════════════
 #  ACCESS CONTROL
