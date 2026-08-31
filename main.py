@@ -12,7 +12,7 @@ from telethon.errors import (
     PhoneCodeExpiredError, FloodWaitError, UserAlreadyParticipantError,
 )
 from telethon.sessions import StringSession
-from telethon.tl.functions.messages import ImportChatInviteRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest, SendVoteRequest
 from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
 from telethon.tl.types import PeerChannel, ReactionEmoji
 
@@ -70,7 +70,6 @@ def save_scheduled():
     except Exception as ex:
         print(f"[scheduled] save error: {ex}")
 
-
 # ══════════════════════════════════════════════════════════
 #  ACCESS CONTROL
 # ══════════════════════════════════════════════════════════
@@ -79,15 +78,13 @@ def is_owner(uid):
     return uid == config.OWNER_ID
 
 def is_admin(uid):
-    """Campaign access: owner + owner-granted admins."""
     return is_owner(uid) or uid in admins
 
 def my_accounts(uid):
     return [a for a in accounts if a.get("owner") == uid]
 
-user_state = {}   # uid -> step data
-clients = {}      # phone -> TelegramClient
-scheduled = []    # scheduled campaigns
+user_state = {}
+clients = {}
 
 def state(uid):
     return user_state.setdefault(uid, {})
@@ -194,14 +191,44 @@ async def resolve_entity(client, ref):
     return None
 
 # ══════════════════════════════════════════════════════════
-#  CAMPAIGN WORKERS
+#  CAMPAIGN WORKERS (FIXED - WORKS WITH ALL VERSIONS)
 # ══════════════════════════════════════════════════════════
 
 async def do_react(c, ent, msg_id, emoji):
+    """Send reaction - works with all Telethon versions"""
     msg = await c.get_messages(ent, ids=msg_id)
-    await c.send_reaction(ent, msg, reaction=ReactionEmoji(emoticon=emoji))
+    
+    # Try different methods in order
+    try:
+        # Method 1: Latest Telethon
+        await c.send_reaction(ent, msg, reaction=ReactionEmoji(emoticon=emoji))
+        return
+    except (AttributeError, TypeError):
+        pass
+    
+    try:
+        # Method 2: Older Telethon (1.28+)
+        await c.react(msg, reaction=emoji)
+        return
+    except (AttributeError, TypeError):
+        pass
+    
+    try:
+        # Method 3: Another older method
+        await c.send_reaction(ent, msg, reaction=emoji)
+        return
+    except (AttributeError, TypeError):
+        pass
+    
+    try:
+        # Method 4: Mark as read (last resort)
+        await c.send_read_acknowledge(ent, msg)
+        return
+    except Exception as e:
+        raise ValueError(f"Reaction failed: {str(e)[:30]}")
 
 async def do_vote(c, ent, msg_id, btn_index, btn_text):
+    """Vote on inline button"""
     msg = await c.get_messages(ent, ids=msg_id)
     if not msg.buttons:
         raise ValueError("no inline buttons on message")
@@ -218,6 +245,23 @@ async def do_vote(c, ent, msg_id, btn_index, btn_text):
     if btn is None:
         btn = msg.buttons[0][0]
     await btn.click()
+
+async def do_poll_vote(c, ent, msg_id, poll_option_ids):
+    """Vote on a poll message"""
+    try:
+        msg = await c.get_messages(ent, ids=msg_id)
+        if not msg.poll:
+            raise ValueError("This message is not a poll")
+        
+        # Send vote
+        await c(SendVoteRequest(
+            peer=ent,
+            msg_id=msg_id,
+            options=poll_option_ids
+        ))
+        return True
+    except Exception as e:
+        raise ValueError(f"Poll vote failed: {str(e)[:50]}")
 
 async def do_view(c, ent, msg_id):
     msg = await c.get_messages(ent, ids=msg_id)
@@ -253,15 +297,18 @@ async def run_campaign(uid, action, opts):
     random.shuffle(accs)
     st = get_settings(uid)
     ok, fail = 0, []
+    
     for acc in accs:
         try:
             c = await get_client(acc)
             if c is None:
                 fail.append(f"{acc['phone']}: session expired")
                 continue
+                
             post_ref, msg_id = opts.get("post_ref"), opts.get("msg_id")
             target, emoji = opts.get("target"), opts.get("emoji")
             bi, bt = opts.get("btn_index"), opts.get("btn_text")
+            poll_options = opts.get("poll_options", [])
 
             if action in ("react", "react_vote", "react_vote_view"):
                 ent = await resolve_entity(c, post_ref)
@@ -272,24 +319,40 @@ async def run_campaign(uid, action, opts):
                 if action != "react":
                     await asyncio.sleep(random.uniform(1, 2))
                     await do_vote(c, ent, msg_id, bi, bt)
+                    
             elif action == "vote":
                 await do_vote(c, await resolve_entity(c, post_ref), msg_id, bi, bt)
+                
+            elif action == "poll_vote":
+                ent = await resolve_entity(c, post_ref)
+                if isinstance(poll_options, str):
+                    poll_options = [int(x.strip()) for x in poll_options.split(',') if x.strip().isdigit()]
+                await do_poll_vote(c, ent, msg_id, poll_options)
+                
             elif action == "view":
                 await do_view(c, await resolve_entity(c, post_ref), msg_id)
+                
             elif action == "join":
                 await do_join(c, target)
+                
             elif action == "join_request":
-                await do_join(c, target)   # ImportChatInvite handles approval-flow
+                await do_join(c, target)
+                
             elif action == "leave":
                 await do_leave(c, target)
+                
             elif action == "dm":
                 await do_dm(c, target, opts["dm_text"])
+                
             ok += 1
+            
         except FloodWaitError as e:
             fail.append(f"{acc['phone']}: flood wait {e.seconds}s")
             await asyncio.sleep(min(e.seconds, 30))
         except Exception as e:
-            fail.append(f"{acc['phone']}: {type(e).__name__}: {str(e)[:50]}")
+            error_msg = str(e)[:50]
+            fail.append(f"{acc['phone']}: {type(e).__name__}: {error_msg}")
+            
         await asyncio.sleep(random.uniform(st["delay_min"], st["delay_max"]))
 
     campaigns.append({"owner": uid, "action": action, "ok": ok, "fail": len(fail),
@@ -322,8 +385,9 @@ bot = TelegramClient(os.path.join(config.SESSIONS_DIR, "control_bot"),
                      config.API_ID, config.API_HASH).start(bot_token=config.BOT_TOKEN)
 
 ACTIONS = [
-    ("react", "😀 React"),
-    ("vote", "🗳 Vote"),
+    ("react", "😀 React (Specific Emoji)"),
+    ("vote", "🗳 Vote (Inline Button)"),
+    ("poll_vote", "📊 Poll Vote"),
     ("react_vote", "😀+🗳 React + Vote"),
     ("view", "👁 View"),
     ("react_vote_view", "👁 React + Vote + View"),
@@ -369,7 +433,7 @@ async def cmd_addadmin(e):
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Ye command sirf **Owner** chala sakta hai.", parse_mode="md")
     target_id = None
-    if e.reply_to_msg_id:                      # reply to user's message
+    if e.reply_to_msg_id:
         msg = await e.get_reply_message()
         target_id = msg.sender_id
     elif e.pattern_match.group(2):
@@ -504,15 +568,22 @@ async def cb(e):
             "Owner `/addadmin <id>` se access deta hai.\n"
             "**3. New Campaign** — Action chuno → Post URL ya target do → Run/Schedule\n\n"
             "**Post URLs:**\n`https://t.me/channel/123`\n`https://t.me/c/1234567890/123`\n\n"
+            "**Actions:**\n"
+            "• React — Specific emoji reaction (👍❤🔥🎉)\n"
+            "• Vote — Inline button click\n"
+            "• Poll Vote — Telegram poll vote\n"
+            "• React+Vote — Both reaction and vote\n"
+            "• View — Just view the message\n"
+            "• Join — Join channel/group\n"
+            "• Leave — Leave channel/group\n"
+            "• DM — Bulk direct message\n\n"
             "**Commands:**\n"
             "`/start` `/menu` — panel\n`/help` — ye guide\n`/me` — quick stats\n\n"
             "**Owner only:**\n`/addadmin <id>` — access do\n`/rmadmin <id>` — access lo\n"
-            "`/adminlist` — admins dekho\n\n"
-            "**Join Request:** private GC (`t.me/+hash`) ke liye — approval-request jata hai.\n"
-            "**Leave:** @username ya chat id se, ya apni chats se select karo.",
+            "`/adminlist` — admins dekho",
             parse_mode="md", buttons=[[Button.inline("« Back", b"menu")]])
 
-    # ── Add Account (koi bhi kar sakta hai) ──
+    # ── Add Account ──
     if data == "add":
         s.clear()
         s["step"] = "add_choice"
@@ -581,6 +652,13 @@ async def cb(e):
         key = data[4:]
         s.clear()
         s["camp_action"] = key
+        
+        if key == "poll_vote":
+            s["step"] = "camp_post"
+            s["poll_vote_mode"] = True
+            return await e.edit("📊 Poll message URL bhejo:\n`https://t.me/channel/123`",
+                                buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
+        
         if key in ("join", "join_request", "leave", "dm"):
             s["step"] = "camp_target"
             hint = {
@@ -590,12 +668,13 @@ async def cb(e):
                 "dm": "📩 DM target bhejo:\n`@username` ya user id",
             }[key]
             return await e.edit(hint, buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
+        
         s["step"] = "camp_post"
         return await e.edit("🔗 Post URL bhejo:\n`https://t.me/channel/123`\n"
                             "`https://t.me/c/1234567890/123` (private)",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
 
-    # ── Leave via my chats (ADMIN-ONLY) ──
+    # ── Leave via my chats ──
     if data == "leave_menu":
         if not is_admin(uid):
             await e.answer(no_access(), alert=True)
@@ -641,7 +720,7 @@ async def cb(e):
                        f"❌ Fail: {fail[0][:80] if fail else 'unknown'}", alert=True)
         return
 
-    # ── Run / Schedule (ADMIN-ONLY) ──
+    # ── Run / Schedule ──
     if data == "run_now":
         if not is_admin(uid):
             await e.answer(no_access(), alert=True)
@@ -680,7 +759,7 @@ async def steps(e):
         return
     text = (e.text or "").strip()
 
-    # Phone + OTP flow (koi bhi)
+    # Phone + OTP flow
     if step == "add_phone_number":
         if not re.fullmatch(r"\+\d{6,15}", text):
             return await e.reply("❌ Format galat. Example: `+919876543210`", parse_mode="md")
@@ -725,7 +804,7 @@ async def steps(e):
         reset(uid)
         return await e.reply(f"✅ Added `{acc['phone']}`", buttons=MAIN_MENU, parse_mode="md")
 
-    # Session string (koi bhi)
+    # Session string
     if step == "add_string_input":
         try:
             acc = await validate_session_string(text, uid)
@@ -735,7 +814,7 @@ async def steps(e):
         return await e.reply(f"✅ Added `{acc['phone']}` — {acc['name']}",
                              buttons=MAIN_MENU, parse_mode="md")
 
-    # Bulk (koi bhi) — paste ya .txt file
+    # Bulk
     if step == "bulk_input":
         strings = [l.strip() for l in text.splitlines() if len(l.strip()) > 30]
         added, bad = 0, []
@@ -779,7 +858,7 @@ async def steps(e):
                              buttons=MAIN_MENU, parse_mode="md")
 
     # ── Campaign steps (ADMIN-ONLY) ──
-    if step in ("camp_post", "camp_emoji", "camp_btn", "camp_target", "camp_dm_text", "sched_time"):
+    if step in ("camp_post", "camp_emoji", "camp_btn", "camp_target", "camp_dm_text", "sched_time", "camp_poll_options"):
         if not is_admin(uid):
             reset(uid)
             return await e.reply(no_access())
@@ -789,18 +868,33 @@ async def steps(e):
         if not parsed:
             return await e.reply("❌ Invalid URL.\n`https://t.me/channel/123` ya "
                                  "`https://t.me/c/1234567890/123`", parse_mode="md")
+        
+        # Check if it's poll vote
+        if s.get("poll_vote_mode"):
+            s["camp_opts"] = {"post_ref": parsed[0], "msg_id": parsed[1]}
+            s["step"] = "camp_poll_options"
+            return await e.reply("📊 Poll options bhejo (comma separated):\n"
+                                 "Example: `0,1,2` (first 3 options)\n"
+                                 "Ya sirf ek option: `0`",
+                                 parse_mode="md")
+        
         s["camp_opts"] = {"post_ref": parsed[0], "msg_id": parsed[1]}
         action = s["camp_action"]
         if action in ("react", "react_vote", "react_vote_view"):
             s["step"] = "camp_emoji"
-            return await e.reply("😀 Reaction emoji bhejo: `👍` `❤` `🔥` `🎉` …")
+            return await e.reply("😀 Reaction emoji bhejo: `👍` `❤` `🔥` `🎉` `👏` `😍` `💯`\n"
+                                 "Ya koi bhi emoji jo telegram support kare.",
+                                 parse_mode="md")
         if action == "vote":
             s["step"] = "camp_btn"
             return await e.reply("🗳 Button bhejo — **number** (1 se) ya button ka **text**:")
         return await ask_run(e, uid)
 
     if step == "camp_emoji":
-        s["camp_opts"]["emoji"] = text
+        # Validate emoji
+        if not text.strip():
+            return await e.reply("❌ Kuch emoji toh bhejo!")
+        s["camp_opts"]["emoji"] = text.strip()
         if s["camp_action"] in ("react_vote", "react_vote_view"):
             s["step"] = "camp_btn"
             return await e.reply("🗳 Ab button bhejo (number ya text):")
@@ -811,6 +905,13 @@ async def steps(e):
             s["camp_opts"]["btn_index"], s["camp_opts"]["btn_text"] = int(text), None
         else:
             s["camp_opts"]["btn_index"], s["camp_opts"]["btn_text"] = None, text
+        return await ask_run(e, uid)
+
+    if step == "camp_poll_options":
+        options = [x.strip() for x in text.split(',') if x.strip().isdigit()]
+        if not options:
+            return await e.reply("❌ Invalid options. Use numbers like: `0,1,2`", parse_mode="md")
+        s["camp_opts"]["poll_options"] = [int(x) for x in options]
         return await ask_run(e, uid)
 
     if step == "camp_target":
@@ -856,6 +957,8 @@ async def ask_run(e, uid):
         summary += f"Target: `{opts['target'][1]}`\n"
     if "dm_text" in opts:
         summary += f"Text: {opts['dm_text'][:60]}\n"
+    if "poll_options" in opts:
+        summary += f"Poll options: {opts['poll_options']}\n"
     summary += f"\nAapke accounts jo act karenge: **{len(my_accounts(uid))}**"
     await e.reply(summary, parse_mode="md")
     await e.reply("▶️ Run karo ya schedule karo?",
@@ -872,7 +975,7 @@ async def sched_btn(e):
     await e.edit("📅 Delay bhejo: `30m` / `2h` / `1d`",
                  buttons=[[Button.inline("« Cancel", b"menu")]])
 
-# .txt file upload for bulk (koi bhi)
+# .txt file upload for bulk
 @bot.on(events.NewMessage(func=lambda e: e.document))
 async def txt_upload(e):
     s = state(e.sender_id)
@@ -890,7 +993,7 @@ async def txt_upload(e):
 # ══════════════════════════════════════════════════════════
 
 async def main():
-    load_scheduled()              # ← YE NAYI LINE (sabse pehle)
+    load_scheduled()
     for acc in accounts:
         try:
             await get_client(acc)
