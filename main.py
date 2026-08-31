@@ -12,7 +12,9 @@ from telethon.errors import (
     PhoneCodeExpiredError, FloodWaitError, UserAlreadyParticipantError,
 )
 from telethon.sessions import StringSession
-from telethon.tl.functions.messages import ImportChatInviteRequest, SendVoteRequest
+from telethon.tl.functions.messages import (
+    ImportChatInviteRequest, SendVoteRequest, GetBotCallbackAnswerRequest
+)
 from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
 from telethon.tl.types import PeerChannel, ReactionEmoji
 
@@ -22,108 +24,94 @@ os.makedirs(config.SESSIONS_DIR, exist_ok=True)
 LOCK = threading.Lock()
 
 # ══════════════════════════════════════════════════════════
-#  PREMIUM CUSTOM EMOJIS
+#  EMOJIS
+#  NOTE: Bots custom/premium emoji SEND nahi kar sakte (Premium
+#  feature hai, server bot ke messages se custom emoji hata deta
+#  hai). Isliye unicode emojis use kiye — ye SABKO dikhte hain,
+#  har device pe colorful. Raw "<emoji id=...>" text ka problem
+#  permanently fix ho gaya.
 # ══════════════════════════════════════════════════════════
 
 class PremiumEmojis:
-    VOTE = "5267095979097610740"
-    JOIN = "6237668294896131350"
-    CANCEL = "6240245571626475799"
-    MAIN_MENU = "6240245571626475799"
-    BACK = "6217402478825049695"
-    CREATE = "5397916757333654639"
-    CONNECT = "5341715473882955310"
-    MANAGE = "6237621548472081271"
-    ADD_VOTES = "6240003971126139705"
-    REMOVE_VOTES = "6240003971126139705"
-    LEADERBOARD = "6240027791014765668"
-    END_GIVEAWAY = "6240085923397114865"
-    ADMIN = "6237595159329113605"
-    BROADCAST = "6237668294896131350"
-    STATS = "6239790794719370356"
-    SETTINGS = "6237621548472081271"
-    USERS = "6237867138997034625"
-    BACKUP = "6237900592497302202"
-    CLEAR = "6240152061598504832"
-    CHANNEL = "6237510794150419802"
-    NOTIFICATION = "6240073270423462835"
-    CONFIRM = "6239815031219820750"
-    REFRESH = "6240085923397114865"
-    WELCOME = "6332080283176672910"
-    FIRE = "6334449730734529256"
-    ARROW = "6332591195306334733"
-    CHART = "6332186798365612896"
-    HEART = "6237558987978447573"
-    ROCKET = "5188481279963715781"
-    CROWN = "6332246180583447893"
-    ERROR = "6334723470475139278"
-    ENDED = "6237572882197650867"
-    STAR = "6239815031219820750"
-    ID = "6237547619200014867"
-    GIFT = "6239894475229895983"
-    WINE = "6237510794150419802"
-    SMILE = "6237867138997034625"
-    LOVE = "6334437167955188087"
-    LIGHTNING = "6240073270423462835"
-    POINTER = "6237732706520668707"
-    ALERT = "6240152061598504832"
-    CLOWN = "6237900592497302202"
-    SEARCH = "6239790794719370356"
-    SPEAKER = "5217968773071401144"
-    LINK = "5289511602393984968"
-    CONFETTI = "6240085923397114865"
-    LOCATION = "6240101054566897479"
-    RIGHT = "6240295371772271503"
-    DIAMOND = "6240003971126139705"
-    CALENDAR = "6240027791014765668"
-    WINNER = "6332435498446888848"
-    MONEY_BAG = "6332246180583447893"
-    CELEBRATE = "6237621707385871360"
-    INBOX = "6237973405077871246"
-    LOCK = "6332490478323243268"
-    SHIELD = "6237595159329113605"
-    JOIN_CHANNEL = "6129433877791382400"
-    JOINED = "6147565374289220368"
-    EXPORT = "6239790794719370356"
-    IMPORT = "6237867138997034625"
+    VOTE = "🗳"          ; JOIN = "➕"          ; CANCEL = "❌"
+    MAIN_MENU = "🏠"     ; BACK = "🔙"          ; CREATE = "🚀"
+    CONNECT = "🔗"       ; MANAGE = "🛠"        ; ADD_VOTES = "➕"
+    REMOVE_VOTES = "➖"  ; LEADERBOARD = "🏆"   ; END_GIVEAWAY = "🏁"
+    ADMIN = "👑"         ; BROADCAST = "📢"     ; STATS = "📊"
+    SETTINGS = "⚙️"      ; USERS = "👥"         ; BACKUP = "💾"
+    CLEAR = "🗑"         ; CHANNEL = "📡"       ; NOTIFICATION = "🔔"
+    CONFIRM = "✅"       ; REFRESH = "🔄"       ; WELCOME = "👋"
+    FIRE = "🔥"          ; ARROW = "➡️"         ; CHART = "📈"
+    HEART = "❤️"         ; ROCKET = "🚀"        ; CROWN = "👑"
+    ERROR = "⚠️"         ; ENDED = "🏁"         ; STAR = "⭐"
+    ID = "🆔"            ; GIFT = "🎁"          ; WINE = "🍷"
+    SMILE = "🙂"         ; LOVE = "😍"          ; LIGHTNING = "⚡"
+    POINTER = "👉"       ; ALERT = "🚨"         ; CLOWN = "🤡"
+    SEARCH = "🔍"        ; SPEAKER = "🔊"       ; LINK = "🔗"
+    CONFETTI = "🎉"      ; LOCATION = "📍"      ; RIGHT = "✔️"
+    DIAMOND = "💎"       ; CALENDAR = "📅"      ; WINNER = "🏅"
+    MONEY_BAG = "💰"     ; CELEBRATE = "🎊"     ; INBOX = "📥"
+    LOCK = "🔒"          ; SHIELD = "🛡"        ; JOIN_CHANNEL = "📨"
+    JOINED = "✔️"        ; EXPORT = "📤"        ; IMPORT = "📥"
 
+    # Reaction: unicode emoji -> custom_emoji_id (sirf tab kaam
+    # karega jab VOTING ACCOUNT khud Premium ho; warna fallback
+    # normal reaction chalega — dono handled)
     REACTION_EMOJIS = {
-        "🔥": FIRE, "❤️": HEART, "⭐": STAR, "💎": DIAMOND, "👑": CROWN,
-        "💫": CONFETTI, "✨": CONFETTI, "🌈": LOCATION, "🎯": SEARCH,
-        "🚀": ROCKET, "🎉": CONFETTI, "💯": STAR, "👍": SMILE,
-        "😍": LOVE, "🤩": STAR, "🙌": CELEBRATE, "👏": CELEBRATE, "💪": ROCKET,
+        "🔥": "6334449730734529256", "❤️": "6237558987978447573",
+        "⭐": "6239815031219820750", "💎": "6240003971126139705",
+        "👑": "6332246180583447893", "🎉": "6240085923397114865",
+        "👍": "6237867138997034625", "😍": "6334437167955188087",
+        "🚀": "5188481279963715781", "💯": "6239815031219820750",
+        "🤩": "6239815031219820750", "🙌": "6237621707385871360",
+        "👏": "6237621707385871360", "💪": "5188481279963715781",
+        "✨": "6240085923397114865",
     }
 
 # ══════════════════════════════════════════════════════════
 #  STORAGE - PERSISTENT DATA (NEVER LOST)
+#  FIX: Atomic save (.tmp + os.replace) — restart/crash ke
+#  waqt JSON corrupt nahi hoga.
 # ══════════════════════════════════════════════════════════
 
 def jload(path, default):
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
     if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(default, f)
-    with LOCK:
-        with open(path) as f:
-            return json.load(f)
+        return default
+    try:
+        with LOCK:
+            with open(path) as f:
+                return json.load(f)
+    except Exception:
+        # corrupted file -> backup + default
+        try:
+            os.replace(path, path + ".corrupt")
+        except Exception:
+            pass
+        return default
 
 def jsave(path, data):
+    tmp = path + ".tmp"
     with LOCK:
-        with open(path, "w") as f:
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp, path)   # atomic — data kabhi corrupt nahi
 
-# ─── ALL DATA PERSISTENT ON RESTART ───
-accounts  = jload(config.ACCOUNTS_FILE, [])    # ✅ Never lost
-admins    = jload(config.ADMINS_FILE, [])      # ✅ Never lost
-settings  = jload(config.SETTINGS_FILE, {})    # ✅ Never lost
-campaigns = jload(config.CAMPAIGNS_FILE, [])   # ✅ Never lost
+accounts  = jload(config.ACCOUNTS_FILE, [])
+admins    = jload(config.ADMINS_FILE, [])
+settings  = jload(config.SETTINGS_FILE, {})
+campaigns = jload(config.CAMPAIGNS_FILE, [])
 
 def save_accounts():  jsave(config.ACCOUNTS_FILE, accounts)
 def save_admins():    jsave(config.ADMINS_FILE, admins)
 def save_settings():  jsave(config.SETTINGS_FILE, settings)
 def save_campaigns(): jsave(config.CAMPAIGNS_FILE, campaigns)
 
-# ─── Scheduled campaigns ───
+# ─── Scheduled campaigns (PERSISTENT) ───
 scheduled = []
 
 def load_scheduled():
@@ -139,8 +127,7 @@ def load_scheduled():
 
 def save_scheduled():
     try:
-        with open(config.SCHEDULED_FILE, "w") as f:
-            json.dump(scheduled, f)
+        jsave(config.SCHEDULED_FILE, scheduled)
     except Exception as ex:
         print(f"[scheduled] save error: {ex}")
 
@@ -173,30 +160,27 @@ def get_settings(uid):
     return settings.setdefault(str(uid), {"delay_min": 1.0, "delay_max": 2.5})
 
 # ══════════════════════════════════════════════════════════
-#  PREMIUM EMOJI HELPERS
+#  REACTION HELPER (FIXED)
 # ══════════════════════════════════════════════════════════
 
-def get_custom_emoji(emoji_id):
-    return f"<emoji id={emoji_id}>"
-
 async def send_premium_reaction(c, ent, msg_id, emoji):
-    msg = await c.get_messages(ent, ids=msg_id)
-    if emoji in PremiumEmojis.REACTION_EMOJIS:
-        emoji_id = PremiumEmojis.REACTION_EMOJIS[emoji]
+    custom_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
+    if custom_id:
         try:
-            await c.send_reaction(ent, msg, reaction=ReactionEmoji(
-                emoticon=emoji,
-                custom_emoji_id=int(emoji_id)
-            ))
+            await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(
+                emoticon=emoji, custom_emoji_id=int(custom_id)))
             return True
-        except:
-            pass
+        except Exception:
+            pass  # account premium nahi -> normal emoji fallback
     try:
-        await c.send_reaction(ent, msg, reaction=ReactionEmoji(emoticon=emoji))
+        await c.send_reaction(ent, msg_id, reaction=ReactionEmoji(emoticon=emoji))
         return True
-    except:
-        await c.send_read_acknowledge(ent, msg)
-        return True
+    except Exception:
+        try:
+            await c.send_read_acknowledge(ent, msg_id)
+        except Exception:
+            pass
+        return False
 
 # ══════════════════════════════════════════════════════════
 #  CLIENTS
@@ -313,25 +297,20 @@ async def resolve_entity_cached(client, ref):
 
 RANDOM_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👏", "😍", "💯", "⭐", "✨", "💪", "🤩", "🙌", "👑", "💎", "🚀"]
 
+# FIX: pehle 'msg' undefined variable tha (NameError) — ab msg_id
+# directly pass hota hai. Custom emoji reaction tabhi jab account
+# premium ho, warna automatic normal emoji fallback.
 async def do_react(c, ent, msg_id, emoji):
     if emoji and emoji.lower() in ["random", "rand", "r", "🍀"]:
         emoji = random.choice(RANDOM_EMOJIS)
-    try:
-        await send_premium_reaction(c, ent, msg_id, emoji)
-        return True
-    except:
-        pass
-    try:
-        await c.send_reaction(ent, msg, reaction=ReactionEmoji(emoticon=emoji))
-        return True
-    except:
-        await c.send_read_acknowledge(ent, msg)
-        return True
+    return await send_premium_reaction(c, ent, msg_id, emoji)
 
+# FIX: Inline vote button — btn.click() fail ho to raw
+# GetBotCallbackAnswerRequest se vote karta hai.
 async def do_vote(c, ent, msg_id, btn_index, btn_text):
     msg = await c.get_messages(ent, ids=msg_id)
     if not msg.buttons:
-        raise ValueError("No inline buttons")
+        raise ValueError("No inline buttons on this post")
     btn, idx = None, 1
     for row in msg.buttons:
         for b in row:
@@ -344,14 +323,30 @@ async def do_vote(c, ent, msg_id, btn_index, btn_text):
             break
     if btn is None:
         btn = msg.buttons[0][0]
-    await btn.click()
-    return True
+    try:
+        await btn.click()
+        return True
+    except Exception:
+        if btn.data:
+            await c(GetBotCallbackAnswerRequest(
+                peer=ent, msg_id=msg_id, data=btn.data))
+            return True
+        raise
 
+# FIX: Poll vote — ab poll ke ACTUAL answer bytes use hote hain
+# (pehle raw index bytes bhej raha tha jo kaafi polls pe fail
+# hota tha). Range check bhi add kiya.
 async def do_poll_vote(c, ent, msg_id, poll_option_ids):
     msg = await c.get_messages(ent, ids=msg_id)
     if not msg.poll:
         raise ValueError("Not a poll")
-    await c(SendVoteRequest(peer=ent, msg_id=msg_id, options=poll_option_ids))
+    answers = msg.poll.poll.answers
+    opts = []
+    for i in poll_option_ids:
+        if i < 0 or i >= len(answers):
+            raise ValueError(f"Option {i} out of range (0-{len(answers)-1})")
+        opts.append(answers[i].option)
+    await c(SendVoteRequest(peer=ent, msg_id=msg_id, options=opts))
     return True
 
 async def do_view(c, ent, msg_id):
@@ -462,54 +457,54 @@ async def scheduler_loop(bot):
         await asyncio.sleep(5)
 
 # ══════════════════════════════════════════════════════════
-#  BOT - PREMIUM UI (FIXED - NO STYLE PARAMETER)
+#  BOT
 # ══════════════════════════════════════════════════════════
 
 bot = TelegramClient(os.path.join(config.SESSIONS_DIR, "control_bot"),
                      config.API_ID, config.API_HASH).start(bot_token=config.BOT_TOKEN)
 
-# ─── ACTIONS ───
 ACTIONS = [
-    ("react", f"{get_custom_emoji(PremiumEmojis.STAR)} React"),
-    ("vote", f"{get_custom_emoji(PremiumEmojis.VOTE)} Vote"),
-    ("poll_vote", f"{get_custom_emoji(PremiumEmojis.CHART)} Poll Vote"),
-    ("react_vote", f"{get_custom_emoji(PremiumEmojis.STAR)} React + Vote"),
-    ("view", f"{get_custom_emoji(PremiumEmojis.SEARCH)} View"),
-    ("react_vote_view", f"{get_custom_emoji(PremiumEmojis.STAR)} React + Vote + View"),
-    ("join", f"{get_custom_emoji(PremiumEmojis.JOIN)} Join"),
-    ("join_request", f"{get_custom_emoji(PremiumEmojis.JOIN_CHANNEL)} Join Request"),
-    ("leave", f"{get_custom_emoji(PremiumEmojis.CANCEL)} Leave"),
-    ("dm", f"{get_custom_emoji(PremiumEmojis.SPEAKER)} DM"),
+    ("react",           f"{PremiumEmojis.STAR} React"),
+    ("vote",            f"{PremiumEmojis.VOTE} Vote"),
+    ("poll_vote",       f"{PremiumEmojis.CHART} Poll Vote"),
+    ("react_vote",      f"{PremiumEmojis.STAR} React + Vote"),
+    ("view",            f"{PremiumEmojis.SEARCH} View"),
+    ("react_vote_view", f"{PremiumEmojis.STAR} React + Vote + View"),
+    ("join",            f"{PremiumEmojis.JOIN} Join"),
+    ("join_request",    f"{PremiumEmojis.JOIN_CHANNEL} Join Request"),
+    ("leave",           f"{PremiumEmojis.CANCEL} Leave"),
+    ("dm",              f"{PremiumEmojis.SPEAKER} DM"),
 ]
 
-# ─── MAIN MENU (FIXED - NO STYLE PARAMETER) ───
+# FIX: Buttons me plain unicode emoji — ab saaf dikhega,
+# raw "<emoji id=...>" text nahi aayega.
 MAIN_MENU = [
-    [Button.inline(f"{get_custom_emoji(PremiumEmojis.ID)} My Account", b"myacc"),
-     Button.inline(f"{get_custom_emoji(PremiumEmojis.CONNECT)} Add Account", b"add")],
-    [Button.inline(f"{get_custom_emoji(PremiumEmojis.CREATE)} New Campaign", b"camp"),
-     Button.inline(f"{get_custom_emoji(PremiumEmojis.CHART)} My Campaigns", b"mycamp")],
-    [Button.inline(f"{get_custom_emoji(PremiumEmojis.CALENDAR)} Schedule", b"sched_info"),
-     Button.inline(f"{get_custom_emoji(PremiumEmojis.STATS)} My Status", b"mystat")],
-    [Button.inline(f"{get_custom_emoji(PremiumEmojis.SETTINGS)} Settings", b"set"),
-     Button.inline(f"{get_custom_emoji(PremiumEmojis.ADMIN)} Owner Panel", b"owner_panel")],
-    [Button.inline(f"{get_custom_emoji(PremiumEmojis.CANCEL)} Leave Channel", b"leave_menu"),
-     Button.inline(f"{get_custom_emoji(PremiumEmojis.SEARCH)} Help", b"help")],
-    [Button.inline(f"{get_custom_emoji(PremiumEmojis.CLEAR)} Remove Account", b"remove_acc")],
+    [Button.inline(f"{PremiumEmojis.ID} My Account", b"myacc"),
+     Button.inline(f"{PremiumEmojis.CONNECT} Add Account", b"add")],
+    [Button.inline(f"{PremiumEmojis.CREATE} New Campaign", b"camp"),
+     Button.inline(f"{PremiumEmojis.CHART} My Campaigns", b"mycamp")],
+    [Button.inline(f"{PremiumEmojis.CALENDAR} Schedule", b"sched_info"),
+     Button.inline(f"{PremiumEmojis.STATS} My Status", b"mystat")],
+    [Button.inline(f"{PremiumEmojis.SETTINGS} Settings", b"set"),
+     Button.inline(f"{PremiumEmojis.ADMIN} Owner Panel", b"owner_panel")],
+    [Button.inline(f"{PremiumEmojis.CANCEL} Leave Channel", b"leave_menu"),
+     Button.inline(f"{PremiumEmojis.SEARCH} Help", b"help")],
+    [Button.inline(f"{PremiumEmojis.CLEAR} Remove Account", b"remove_acc")],
 ]
 
 def menu_text(uid):
     total = get_total_accounts()
     my = len(my_accounts(uid))
-    return (f"{get_custom_emoji(PremiumEmojis.CROWN)} **╔═══ VOTEFLOW BOT ═══╗**\n\n"
-            f"{get_custom_emoji(PremiumEmojis.CHART)} **Global Stats:**\n"
+    return (f"{PremiumEmojis.CROWN} **╔═══ VOTEFLOW BOT ═══╗**\n\n"
+            f"{PremiumEmojis.CHART} **Global Stats:**\n"
             f"┌──────────────────────┐\n"
             f"│ Total Accounts: **{total}**\n"
             f"│ Your Accounts: **{my}**\n"
             f"└──────────────────────┘\n\n"
-            f"{get_custom_emoji(PremiumEmojis.LOCK)} **Access:** **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n")
+            f"{PremiumEmojis.LOCK} **Access:** **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n")
 
 def no_access():
-    return (f"{get_custom_emoji(PremiumEmojis.ALERT)} **Access Denied!**\nOnly Owner/Admins can run campaigns.")
+    return (f"{PremiumEmojis.ALERT} **Access Denied!**\nOnly Owner/Admins can run campaigns.")
 
 # ── COMMANDS ──
 
@@ -521,10 +516,9 @@ async def cmd_start(e):
 @bot.on(events.NewMessage(pattern="^/me$"))
 async def cmd_me(e):
     total, active, expired = await check_status(e.sender_id)
-    await e.reply(f"{get_custom_emoji(PremiumEmojis.ID)} **My Profile**\n"
+    await e.reply(f"{PremiumEmojis.ID} **My Profile**\n"
                   f"ID: `{e.sender_id}`\nAccounts: {total} | Active: {active} | Expired: {expired}", parse_mode="md")
 
-# ─── ADD ADMIN (PERSISTENT) ───
 @bot.on(events.NewMessage(pattern="^/addadmin(@\w+)?(\s+.*)?$"))
 async def cmd_addadmin(e):
     if not is_owner(e.sender_id):
@@ -547,14 +541,13 @@ async def cmd_addadmin(e):
     if is_admin(target_id):
         return await e.reply(f"ℹ️ `{target_id}` is already admin.", parse_mode="md")
     admins.append(target_id)
-    save_admins()
+    save_admins()          # PERSISTENT — restart pe bhi rahega
     await e.reply(f"✅ **`{target_id}` is now Admin!**", parse_mode="md")
     try:
         await bot.send_message(target_id, "🎉 You got **Admin access**! Use /start")
-    except:
+    except Exception:
         pass
 
-# ─── REMOVE ADMIN ───
 @bot.on(events.NewMessage(pattern="^/rmadmin(\s+.*)?$"))
 async def cmd_rmadmin(e):
     if not is_owner(e.sender_id):
@@ -584,7 +577,7 @@ async def cmd_adminlist(e):
         try:
             u = await bot.get_entity(a)
             lines.append(f"· `{a}` — {u.first_name}")
-        except:
+        except Exception:
             lines.append(f"· `{a}` — (unknown)")
     await e.reply("\n".join(lines), parse_mode="md")
 
@@ -612,7 +605,7 @@ async def cb(e):
                 try:
                     u = await bot.get_entity(a)
                     lines.append(f"· `{a}` — {u.first_name}")
-                except:
+                except Exception:
                     lines.append(f"· `{a}`")
         else:
             lines.append("· No admins")
@@ -674,7 +667,7 @@ async def cb(e):
     # ── Add Account ──
     if data == "add":
         s.clear()
-        return await e.edit(f"{get_custom_emoji(PremiumEmojis.CONNECT)} **Add Account**",
+        return await e.edit(f"{PremiumEmojis.CONNECT} **Add Account**",
                             buttons=[[Button.inline("📱 Phone + OTP", b"add_phone")],
                                      [Button.inline("🔑 Session String", b"add_string")],
                                      [Button.inline("📋 Bulk Sessions", b"bulk")],
@@ -702,12 +695,13 @@ async def cb(e):
     if data == "remove_acc":
         s.clear()
         s["step"] = "remove_input"
-        return await e.edit(f"{get_custom_emoji(PremiumEmojis.CLEAR)} **Remove Account**\nSend phone number:\n`+919876543210`\n\n⚠️ Permanent!",
+        return await e.edit(f"{PremiumEmojis.CLEAR} **Remove Account**\nSend phone number:\n`+919876543210`\n\n⚠️ Permanent!",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
 
     # ── Settings ──
     if data == "set":
         st = get_settings(uid)
+        s["step"] = "set"
         return await e.edit(f"⚙️ **Settings**\nDelay: `{st['delay_min']}`–`{st['delay_max']}` sec\n\nSet new: `min-max` (eg `1-3`)",
                             buttons=[[Button.inline("« Back", b"menu")]], parse_mode="md")
 
@@ -736,13 +730,13 @@ async def cb(e):
         key = data[4:]
         s.clear()
         s["camp_action"] = key
-        
+
         if key == "poll_vote":
             s["step"] = "camp_post"
             s["poll_vote_mode"] = True
             return await e.edit("📊 **Poll Vote**\nSend poll URL:\n`https://t.me/...`",
                                 buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-        
+
         if key in ("join", "join_request", "leave", "dm"):
             s["step"] = "camp_target"
             hints = {
@@ -752,7 +746,7 @@ async def cb(e):
                 "dm": "📩 **DM**\nSend: `@username` or user id",
             }
             return await e.edit(hints[key], buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
-        
+
         s["step"] = "camp_post"
         return await e.edit("🔗 **Post URL**\nSend: `https://t.me/channel/123`\nor `https://t.me/c/1234567890/123`",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
@@ -821,7 +815,7 @@ async def cb(e):
         s = state(uid)
         scheduled.append({"run_at": time.time() + s["sched_delay"], "owner": uid,
                           "action": s["camp_action"], "opts": s["camp_opts"]})
-        save_scheduled()
+        save_scheduled()      # PERSISTENT — restart pe bhi chalega
         reset(uid)
         return await e.edit("📅 **Scheduled!**", buttons=[[Button.inline("« Menu", b"menu")]])
 
@@ -939,7 +933,7 @@ async def steps(e):
                              buttons=MAIN_MENU, parse_mode="md")
 
     # ── Campaign steps ──
-    if step in ("camp_post", "camp_emoji", "camp_btn", "camp_target", 
+    if step in ("camp_post", "camp_emoji", "camp_btn", "camp_target",
                 "camp_dm_text", "sched_time", "camp_poll_options"):
         if not is_admin(uid):
             reset(uid)
@@ -949,12 +943,12 @@ async def steps(e):
         parsed = parse_post_url(text)
         if not parsed:
             return await e.reply("❌ Invalid URL.", parse_mode="md")
-        
+
         if s.get("poll_vote_mode"):
             s["camp_opts"] = {"post_ref": parsed[0], "msg_id": parsed[1]}
             s["step"] = "camp_poll_options"
-            return await e.reply("📊 Send poll options (comma): `0,1,2`", parse_mode="md")
-        
+            return await e.reply("📊 Send poll options (comma): `0,1,2`\n(0 = first option, 1 = second…)", parse_mode="md")
+
         s["camp_opts"] = {"post_ref": parsed[0], "msg_id": parsed[1]}
         action = s["camp_action"]
         if action in ("react", "react_vote", "react_vote_view"):
@@ -1073,9 +1067,8 @@ async def main():
         except Exception as ex:
             print(f"[load] {acc['phone']}: {ex}")
     asyncio.create_task(scheduler_loop(bot))
-    print(f"[VoteFlow] Running. Accounts: {len(accounts)}, Admins: {len(admins)+1}")
+    print(f"[VoteFlow] Running. Accounts: {len(accounts)}, Admins: {len(admins)+1}, Scheduled: {len(scheduled)}")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
     bot.loop.run_until_complete(main())
-
