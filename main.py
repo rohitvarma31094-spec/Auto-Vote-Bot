@@ -287,7 +287,7 @@ class PremiumEmojis:
 #  STORAGE (with auto-backup)
 # ==========================================================
 
-# Load data
+# Load data - defined at module level
 accounts = jload(config.ACCOUNTS_FILE, [])
 raw_admins = jload(config.ADMINS_FILE, [])
 admins = []
@@ -376,19 +376,8 @@ def check_and_restore_on_startup():
                                         shutil.copy2(backup_file, target_file)
                                         print(f"[STARTUP] Restored {file_name}")
                             
-                            # Reload all data
-                            global accounts, admins, settings, campaigns, scheduled
-                            accounts = jload(config.ACCOUNTS_FILE, [])
-                            raw_admins = jload(config.ADMINS_FILE, [])
-                            admins = []
-                            for a in raw_admins:
-                                if isinstance(a, int):
-                                    admins.append({"id": a, "limit": 0, "name": "Unknown"})
-                                else:
-                                    admins.append(a)
-                            settings = jload(config.SETTINGS_FILE, {})
-                            campaigns = jload(config.CAMPAIGNS_FILE, [])
-                            load_scheduled()
+                            # Reload all data without using global
+                            reload_all_data()
                             return True
                     except Exception as e:
                         print(f"[STARTUP] Error restoring from backup: {e}")
@@ -402,8 +391,7 @@ def check_and_restore_on_startup():
                     except:
                         pass
             
-            global accounts
-            accounts = jload(config.ACCOUNTS_FILE, [])
+            reload_all_data()
             if accounts:
                 print(f"[STARTUP] ✅ Loaded {len(accounts)} accounts after restore")
                 return True
@@ -412,6 +400,21 @@ def check_and_restore_on_startup():
     except Exception as e:
         print(f"[STARTUP] Error in check_and_restore: {e}")
         return False
+
+def reload_all_data():
+    """Reload all data from files"""
+    global accounts, admins, settings, campaigns, scheduled
+    accounts = jload(config.ACCOUNTS_FILE, [])
+    raw_admins = jload(config.ADMINS_FILE, [])
+    admins = []
+    for a in raw_admins:
+        if isinstance(a, int):
+            admins.append({"id": a, "limit": 0, "name": "Unknown"})
+        else:
+            admins.append(a)
+    settings = jload(config.SETTINGS_FILE, {})
+    campaigns = jload(config.CAMPAIGNS_FILE, [])
+    load_scheduled()
 
 # ==========================================================
 #  ACCESS CONTROL
@@ -1428,7 +1431,6 @@ async def cmd_addadmin(e):
 
 @bot.on(events.NewMessage(pattern="^/rmadmin(\s+.*)?$"))
 async def cmd_rmadmin(e):
-    global admins
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
 
@@ -1442,7 +1444,10 @@ async def cmd_rmadmin(e):
     if target_id is None:
         return await e.reply("Usage: `/rmadmin <user_id>`", parse_mode="md")
 
-    admins = [a for a in admins if a.get('id') != target_id]
+    # Update admins list without using global
+    new_admins = [a for a in admins if a.get('id') != target_id]
+    admins.clear()
+    admins.extend(new_admins)
     save_admins()
     await e.reply(f"🗑️ Admin revoked for `{target_id}`.", parse_mode="md")
 
