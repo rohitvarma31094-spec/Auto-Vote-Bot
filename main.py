@@ -20,8 +20,10 @@ from telethon.errors import (
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import (
     ImportChatInviteRequest, SendVoteRequest, GetBotCallbackAnswerRequest,
-    CheckChatInviteRequest, GetMessagesRequest
+    CheckChatInviteRequest, GetMessagesRequest,
+    SendReactionRequest          # ← ADD THIS
 )
+
 from telethon.tl.functions.channels import (
     JoinChannelRequest, LeaveChannelRequest, GetFullChannelRequest,
     GetParticipantRequest
@@ -451,9 +453,19 @@ async def do_react(c, ent, msg_id, emoji):
         emoji = random.choice(RANDOM_EMOJIS)
     emoji = (emoji or "👍").strip()
 
-    async def attempt(react_obj):
+ async def attempt(react_obj):
         try:
-            await c.send_reaction(ent, msg_id, reaction=react_obj)
+            # Modern Telethon → send_reaction()
+            if hasattr(c, 'send_reaction'):
+                await c.send_reaction(ent, msg_id, reaction=react_obj)
+            else:
+                # Old Telethon → raw API request (always works)
+                await c(SendReactionRequest(
+                    peer=ent,
+                    msg_id=msg_id,
+                    reaction=[react_obj],
+                    add_to_recent=True
+                ))
             return True, None
         except ReactionInvalidError:
             return False, "reaction not allowed on this post"
@@ -1803,6 +1815,9 @@ async def main():
             print(f"[load] {acc['phone']}: {ex}")
 
     asyncio.create_task(scheduler_loop(bot))
+
+    # ← YE NEW LINE (just console me version dikhane ke liye)
+    print(f"[VoteFlow] Telethon version: {__import__('telethon').__version__}")
 
     print(f"[VoteFlow] Running. Accounts: {len(accounts)}, Admins: {len(admins)+1}, "
           f"Scheduled: {len(scheduled)}")
