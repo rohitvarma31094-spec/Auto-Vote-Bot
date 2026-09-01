@@ -38,7 +38,6 @@ from telethon.tl.types import (
     InputPeerChannel, InputPeerChat, InputPeerUser
 )
 
-# ── Button style support ──
 try:
     from telethon.tl.types import KeyboardButtonCallback, KeyboardButtonStyle
     HAS_BTN_STYLE = True
@@ -58,35 +57,24 @@ BACKUP_DIR = "backups"
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 def create_backup():
-    """Create backup of all data files"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = os.path.join(BACKUP_DIR, f"backup_{timestamp}")
         os.makedirs(backup_path, exist_ok=True)
         
-        # Backup accounts file
         if os.path.exists(config.ACCOUNTS_FILE):
             shutil.copy2(config.ACCOUNTS_FILE, os.path.join(backup_path, "accounts.json"))
-        
-        # Backup admins file
         if os.path.exists(config.ADMINS_FILE):
             shutil.copy2(config.ADMINS_FILE, os.path.join(backup_path, "admins.json"))
-        
-        # Backup settings file
         if os.path.exists(config.SETTINGS_FILE):
             shutil.copy2(config.SETTINGS_FILE, os.path.join(backup_path, "settings.json"))
-        
-        # Backup campaigns
         if os.path.exists(config.CAMPAIGNS_FILE):
             shutil.copy2(config.CAMPAIGNS_FILE, os.path.join(backup_path, "campaigns.json"))
-        
-        # Backup scheduled
         if os.path.exists(config.SCHEDULED_FILE):
             shutil.copy2(config.SCHEDULED_FILE, os.path.join(backup_path, "scheduled.json"))
         
         print(f"[BACKUP] Created backup at {backup_path}")
         
-        # Keep only last 5 backups
         backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
         if len(backups) > 5:
             for old_backup in backups[:-5]:
@@ -99,10 +87,8 @@ def create_backup():
         return None
 
 def restore_from_backup(backup_path=None):
-    """Restore data from latest backup"""
     try:
         if backup_path is None:
-            # Get latest backup
             backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
             if not backups:
                 print("[BACKUP] No backups found to restore")
@@ -111,31 +97,26 @@ def restore_from_backup(backup_path=None):
         
         print(f"[BACKUP] Restoring from {backup_path}")
         
-        # Restore accounts
         accounts_backup = os.path.join(backup_path, "accounts.json")
         if os.path.exists(accounts_backup):
             shutil.copy2(accounts_backup, config.ACCOUNTS_FILE)
             print(f"[BACKUP] Restored accounts.json")
         
-        # Restore admins
         admins_backup = os.path.join(backup_path, "admins.json")
         if os.path.exists(admins_backup):
             shutil.copy2(admins_backup, config.ADMINS_FILE)
             print(f"[BACKUP] Restored admins.json")
         
-        # Restore settings
         settings_backup = os.path.join(backup_path, "settings.json")
         if os.path.exists(settings_backup):
             shutil.copy2(settings_backup, config.SETTINGS_FILE)
             print(f"[BACKUP] Restored settings.json")
         
-        # Restore campaigns
         campaigns_backup = os.path.join(backup_path, "campaigns.json")
         if os.path.exists(campaigns_backup):
             shutil.copy2(campaigns_backup, config.CAMPAIGNS_FILE)
             print(f"[BACKUP] Restored campaigns.json")
         
-        # Restore scheduled
         scheduled_backup = os.path.join(backup_path, "scheduled.json")
         if os.path.exists(scheduled_backup):
             shutil.copy2(scheduled_backup, config.SCHEDULED_FILE)
@@ -148,21 +129,17 @@ def restore_from_backup(backup_path=None):
         return False
 
 def safe_save(data, file_path):
-    """Save data with backup and corruption prevention"""
     try:
-        # Create backup before saving
         if os.path.exists(file_path):
             backup_file = file_path + ".bak"
             shutil.copy2(file_path, backup_file)
         
-        # Save with temp file
         tmp = file_path + ".tmp"
         with LOCK:
             with open(tmp, "w") as f:
                 json.dump(data, f, indent=2)
             os.replace(tmp, file_path)
         
-        # Remove backup if save successful
         backup_file = file_path + ".bak"
         if os.path.exists(backup_file):
             os.remove(backup_file)
@@ -170,7 +147,6 @@ def safe_save(data, file_path):
         return True
     except Exception as e:
         print(f"[SAFE_SAVE] Error saving {file_path}: {e}")
-        # Try to restore from backup
         backup_file = file_path + ".bak"
         if os.path.exists(backup_file):
             try:
@@ -180,7 +156,6 @@ def safe_save(data, file_path):
                 pass
         return False
 
-# Override save functions with safe save
 def jsave(path, data):
     safe_save(data, path)
 
@@ -189,9 +164,7 @@ def jload(path, default):
     if d:
         os.makedirs(d, exist_ok=True)
     
-    # Try to load from backup if main file is corrupted
     if not os.path.exists(path):
-        # Check if backup exists
         backup_file = path + ".bak"
         if os.path.exists(backup_file):
             try:
@@ -200,7 +173,6 @@ def jload(path, default):
             except:
                 pass
         
-        # Still doesn't exist, create default
         if not os.path.exists(path):
             with open(path, "w") as f:
                 json.dump(default, f)
@@ -213,21 +185,18 @@ def jload(path, default):
     except Exception as e:
         print(f"[JLOAD] Error loading {path}: {e}")
         
-        # Try backup
         backup_file = path + ".bak"
         if os.path.exists(backup_file):
             try:
                 with LOCK:
                     with open(backup_file) as f:
                         data = json.load(f)
-                # Restore main file from backup
                 shutil.copy2(backup_file, path)
                 print(f"[JLOAD] Restored {path} from backup")
                 return data
             except:
                 pass
         
-        # Try to restore from main backup directory
         backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
         if backups:
             latest_backup = os.path.join(BACKUP_DIR, backups[-1])
@@ -243,7 +212,6 @@ def jload(path, default):
                 except:
                     pass
         
-        # Create default
         try:
             os.replace(path, path + ".corrupt")
         except:
@@ -319,6 +287,7 @@ class PremiumEmojis:
 #  STORAGE (with auto-backup)
 # ==========================================================
 
+# Load data
 accounts = jload(config.ACCOUNTS_FILE, [])
 raw_admins = jload(config.ADMINS_FILE, [])
 admins = []
@@ -333,23 +302,24 @@ active_campaigns = {}
 campaign_history = jload(config.CAMPAIGNS_FILE + "_history", [])
 running_campaigns = {}
 
-def save_accounts(): 
+# Save functions
+def save_accounts():
     jsave(config.ACCOUNTS_FILE, accounts)
-    create_backup()  # Auto backup on save
+    create_backup()
 
-def save_admins(): 
+def save_admins():
     jsave(config.ADMINS_FILE, admins)
     create_backup()
 
-def save_settings(): 
+def save_settings():
     jsave(config.SETTINGS_FILE, settings)
     create_backup()
 
-def save_campaigns(): 
+def save_campaigns():
     jsave(config.CAMPAIGNS_FILE, campaigns)
     create_backup()
 
-def save_campaign_history(): 
+def save_campaign_history():
     jsave(config.CAMPAIGNS_FILE + "_history", campaign_history)
 
 scheduled = []
@@ -380,14 +350,11 @@ load_scheduled()
 def check_and_restore_on_startup():
     """Check if accounts are empty and try to restore from backup"""
     try:
-        # Load current accounts
         current_accounts = jload(config.ACCOUNTS_FILE, [])
         
-        # If accounts are empty, try to restore
         if not current_accounts:
             print("[STARTUP] No accounts found! Attempting restore from backup...")
             
-            # Try to restore from latest backup
             backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
             if backups:
                 latest_backup = os.path.join(BACKUP_DIR, backups[-1])
@@ -398,11 +365,9 @@ def check_and_restore_on_startup():
                         with open(accounts_backup) as f:
                             restored_accounts = json.load(f)
                         if restored_accounts:
-                            # Restore accounts
                             jsave(config.ACCOUNTS_FILE, restored_accounts)
                             print(f"[STARTUP] ✅ Restored {len(restored_accounts)} accounts from backup!")
                             
-                            # Also restore other files
                             for file_name in ["admins.json", "settings.json", "campaigns.json", "scheduled.json"]:
                                 backup_file = os.path.join(latest_backup, file_name)
                                 if os.path.exists(backup_file):
@@ -428,7 +393,6 @@ def check_and_restore_on_startup():
                     except Exception as e:
                         print(f"[STARTUP] Error restoring from backup: {e}")
             
-            # Try to restore from .bak files
             for file_path in [config.ACCOUNTS_FILE, config.ADMINS_FILE, config.SETTINGS_FILE, config.CAMPAIGNS_FILE]:
                 backup_file = file_path + ".bak"
                 if os.path.exists(backup_file):
@@ -438,7 +402,6 @@ def check_and_restore_on_startup():
                     except:
                         pass
             
-            # Reload accounts
             global accounts
             accounts = jload(config.ACCOUNTS_FILE, [])
             if accounts:
@@ -677,7 +640,7 @@ def parse_join_target(text):
     return None
 
 # ==========================================================
-#  CAMPAIGN WORKERS (same as before)
+#  CAMPAIGN WORKERS
 # ==========================================================
 
 RANDOM_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👏", "😍", "💯", "🤩", "🙏", "⚡"]
@@ -947,7 +910,6 @@ async def run_campaign(uid, action, opts):
                     fail.append(f"{acc['phone']}: Session expired")
                     continue
 
-                # ── STEP 1: Join if needed ──
                 if join_target:
                     joined, jerr = await do_join_channel(c, join_target)
                     if not joined:
@@ -955,14 +917,12 @@ async def run_campaign(uid, action, opts):
                         continue
                     await asyncio.sleep(random.uniform(1.0, 2.0))
 
-                # ── STEP 2: Resolve the post ──
                 current_ent = None
                 if post_ref:
                     current_ent = await resolve_entity_cached(c, post_ref)
                     if not current_ent and target:
                         current_ent = await resolve_entity_cached(c, target)
 
-                # Try to join public channel if not found
                 if post_ref and current_ent is None:
                     if post_ref[0] == "username":
                         join_target_public = ("username", post_ref[1])
@@ -979,7 +939,6 @@ async def run_campaign(uid, action, opts):
                     fail.append(f"{acc['phone']}: Post not accessible")
                     continue
 
-                # ── STEP 3: Perform the action ──
                 if action in ("react", "react_vote", "react_vote_view"):
                     if action == "react_vote_view":
                         await do_view(c, current_ent, msg_id)
@@ -1194,7 +1153,6 @@ def no_access():
 # ==========================================================
 
 async def check_user_accounts(uid):
-    """Check all accounts for a specific user and return detailed status"""
     user_accs = [a for a in accounts if a.get("owner") == uid]
     total = len(user_accs)
     active, expired = [], []
@@ -1220,7 +1178,7 @@ async def check_user_accounts(uid):
     }
 
 # ==========================================================
-#  COMMANDS (same as before)
+#  COMMANDS
 # ==========================================================
 
 @bot.on(events.NewMessage(pattern="^/(start|menu|help)$"))
@@ -1530,7 +1488,7 @@ async def cmd_stop(e):
         await e.reply("\n".join(lines), parse_mode="md")
 
 # ==========================================================
-#  CALLBACK ROUTER (same as before)
+#  CALLBACK ROUTER
 # ==========================================================
 
 @bot.on(events.CallbackQuery())
