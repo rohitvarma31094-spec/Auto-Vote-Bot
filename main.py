@@ -453,7 +453,17 @@ async def do_react(c, ent, msg_id, emoji):
         emoji = random.choice(RANDOM_EMOJIS)
     emoji = (emoji or "👍").strip()
 
- async def attempt(react_obj):
+async def do_react(c, ent, msg_id, emoji):
+    """Send reaction with full fallback chain:
+    1) Premium custom emoji (if account is Premium)
+    2) Standard emoji
+    3) If chat restricts reactions → auto-pick an ALLOWED reaction and retry.
+    Returns (ok: bool, error: str|None)"""
+    if emoji and emoji.lower() in ("random", "rand", "r", "🍀"):
+        emoji = random.choice(RANDOM_EMOJIS)
+    emoji = (emoji or "👍").strip()
+
+    async def attempt(react_obj):
         try:
             # Modern Telethon → send_reaction()
             if hasattr(c, 'send_reaction'):
@@ -470,7 +480,7 @@ async def do_react(c, ent, msg_id, emoji):
         except ReactionInvalidError:
             return False, "reaction not allowed on this post"
         except Exception as ex:
-            return False, f"{type(ex).__name__}: {str(ex)[:60]}"
+            return False, f"{type(e).__name__}: {str(ex)[:60]}"
 
     # 1) Premium custom emoji
     doc_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
