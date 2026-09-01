@@ -5,6 +5,7 @@ import random
 import re
 import threading
 import time
+import shutil
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
@@ -48,6 +49,208 @@ import config
 
 os.makedirs(config.SESSIONS_DIR, exist_ok=True)
 LOCK = threading.Lock()
+
+# ==========================================================
+#  AUTO-BACKUP & RESTORE SYSTEM
+# ==========================================================
+
+BACKUP_DIR = "backups"
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+def create_backup():
+    """Create backup of all data files"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = os.path.join(BACKUP_DIR, f"backup_{timestamp}")
+        os.makedirs(backup_path, exist_ok=True)
+        
+        # Backup accounts file
+        if os.path.exists(config.ACCOUNTS_FILE):
+            shutil.copy2(config.ACCOUNTS_FILE, os.path.join(backup_path, "accounts.json"))
+        
+        # Backup admins file
+        if os.path.exists(config.ADMINS_FILE):
+            shutil.copy2(config.ADMINS_FILE, os.path.join(backup_path, "admins.json"))
+        
+        # Backup settings file
+        if os.path.exists(config.SETTINGS_FILE):
+            shutil.copy2(config.SETTINGS_FILE, os.path.join(backup_path, "settings.json"))
+        
+        # Backup campaigns
+        if os.path.exists(config.CAMPAIGNS_FILE):
+            shutil.copy2(config.CAMPAIGNS_FILE, os.path.join(backup_path, "campaigns.json"))
+        
+        # Backup scheduled
+        if os.path.exists(config.SCHEDULED_FILE):
+            shutil.copy2(config.SCHEDULED_FILE, os.path.join(backup_path, "scheduled.json"))
+        
+        print(f"[BACKUP] Created backup at {backup_path}")
+        
+        # Keep only last 5 backups
+        backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
+        if len(backups) > 5:
+            for old_backup in backups[:-5]:
+                shutil.rmtree(os.path.join(BACKUP_DIR, old_backup))
+                print(f"[BACKUP] Removed old backup: {old_backup}")
+        
+        return backup_path
+    except Exception as e:
+        print(f"[BACKUP] Error creating backup: {e}")
+        return None
+
+def restore_from_backup(backup_path=None):
+    """Restore data from latest backup"""
+    try:
+        if backup_path is None:
+            # Get latest backup
+            backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
+            if not backups:
+                print("[BACKUP] No backups found to restore")
+                return False
+            backup_path = os.path.join(BACKUP_DIR, backups[-1])
+        
+        print(f"[BACKUP] Restoring from {backup_path}")
+        
+        # Restore accounts
+        accounts_backup = os.path.join(backup_path, "accounts.json")
+        if os.path.exists(accounts_backup):
+            shutil.copy2(accounts_backup, config.ACCOUNTS_FILE)
+            print(f"[BACKUP] Restored accounts.json")
+        
+        # Restore admins
+        admins_backup = os.path.join(backup_path, "admins.json")
+        if os.path.exists(admins_backup):
+            shutil.copy2(admins_backup, config.ADMINS_FILE)
+            print(f"[BACKUP] Restored admins.json")
+        
+        # Restore settings
+        settings_backup = os.path.join(backup_path, "settings.json")
+        if os.path.exists(settings_backup):
+            shutil.copy2(settings_backup, config.SETTINGS_FILE)
+            print(f"[BACKUP] Restored settings.json")
+        
+        # Restore campaigns
+        campaigns_backup = os.path.join(backup_path, "campaigns.json")
+        if os.path.exists(campaigns_backup):
+            shutil.copy2(campaigns_backup, config.CAMPAIGNS_FILE)
+            print(f"[BACKUP] Restored campaigns.json")
+        
+        # Restore scheduled
+        scheduled_backup = os.path.join(backup_path, "scheduled.json")
+        if os.path.exists(scheduled_backup):
+            shutil.copy2(scheduled_backup, config.SCHEDULED_FILE)
+            print(f"[BACKUP] Restored scheduled.json")
+        
+        print(f"[BACKUP] Restore completed successfully!")
+        return True
+    except Exception as e:
+        print(f"[BACKUP] Error restoring backup: {e}")
+        return False
+
+def safe_save(data, file_path):
+    """Save data with backup and corruption prevention"""
+    try:
+        # Create backup before saving
+        if os.path.exists(file_path):
+            backup_file = file_path + ".bak"
+            shutil.copy2(file_path, backup_file)
+        
+        # Save with temp file
+        tmp = file_path + ".tmp"
+        with LOCK:
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp, file_path)
+        
+        # Remove backup if save successful
+        backup_file = file_path + ".bak"
+        if os.path.exists(backup_file):
+            os.remove(backup_file)
+        
+        return True
+    except Exception as e:
+        print(f"[SAFE_SAVE] Error saving {file_path}: {e}")
+        # Try to restore from backup
+        backup_file = file_path + ".bak"
+        if os.path.exists(backup_file):
+            try:
+                shutil.copy2(backup_file, file_path)
+                print(f"[SAFE_SAVE] Restored from backup for {file_path}")
+            except:
+                pass
+        return False
+
+# Override save functions with safe save
+def jsave(path, data):
+    safe_save(data, path)
+
+def jload(path, default):
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    
+    # Try to load from backup if main file is corrupted
+    if not os.path.exists(path):
+        # Check if backup exists
+        backup_file = path + ".bak"
+        if os.path.exists(backup_file):
+            try:
+                shutil.copy2(backup_file, path)
+                print(f"[JLOAD] Restored from backup: {path}")
+            except:
+                pass
+        
+        # Still doesn't exist, create default
+        if not os.path.exists(path):
+            with open(path, "w") as f:
+                json.dump(default, f)
+            return default
+    
+    try:
+        with LOCK:
+            with open(path) as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[JLOAD] Error loading {path}: {e}")
+        
+        # Try backup
+        backup_file = path + ".bak"
+        if os.path.exists(backup_file):
+            try:
+                with LOCK:
+                    with open(backup_file) as f:
+                        data = json.load(f)
+                # Restore main file from backup
+                shutil.copy2(backup_file, path)
+                print(f"[JLOAD] Restored {path} from backup")
+                return data
+            except:
+                pass
+        
+        # Try to restore from main backup directory
+        backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
+        if backups:
+            latest_backup = os.path.join(BACKUP_DIR, backups[-1])
+            backup_file_path = os.path.join(latest_backup, os.path.basename(path))
+            if os.path.exists(backup_file_path):
+                try:
+                    with LOCK:
+                        with open(backup_file_path) as f:
+                            data = json.load(f)
+                    shutil.copy2(backup_file_path, path)
+                    print(f"[JLOAD] Restored {path} from backup directory")
+                    return data
+                except:
+                    pass
+        
+        # Create default
+        try:
+            os.replace(path, path + ".corrupt")
+        except:
+            pass
+        with open(path, "w") as f:
+            json.dump(default, f)
+        return default
 
 # ==========================================================
 #  STYLISH FONTS
@@ -113,34 +316,8 @@ class PremiumEmojis:
     }
 
 # ==========================================================
-#  STORAGE
+#  STORAGE (with auto-backup)
 # ==========================================================
-
-def jload(path, default):
-    d = os.path.dirname(path)
-    if d:
-        os.makedirs(d, exist_ok=True)
-    if not os.path.exists(path):
-        with open(path, "w") as f:
-            json.dump(default, f)
-        return default
-    try:
-        with LOCK:
-            with open(path) as f:
-                return json.load(f)
-    except Exception:
-        try:
-            os.replace(path, path + ".corrupt")
-        except Exception:
-            pass
-        return default
-
-def jsave(path, data):
-    tmp = path + ".tmp"
-    with LOCK:
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, path)
 
 accounts = jload(config.ACCOUNTS_FILE, [])
 raw_admins = jload(config.ADMINS_FILE, [])
@@ -156,11 +333,24 @@ active_campaigns = {}
 campaign_history = jload(config.CAMPAIGNS_FILE + "_history", [])
 running_campaigns = {}
 
-def save_accounts(): jsave(config.ACCOUNTS_FILE, accounts)
-def save_admins(): jsave(config.ADMINS_FILE, admins)
-def save_settings(): jsave(config.SETTINGS_FILE, settings)
-def save_campaigns(): jsave(config.CAMPAIGNS_FILE, campaigns)
-def save_campaign_history(): jsave(config.CAMPAIGNS_FILE + "_history", campaign_history)
+def save_accounts(): 
+    jsave(config.ACCOUNTS_FILE, accounts)
+    create_backup()  # Auto backup on save
+
+def save_admins(): 
+    jsave(config.ADMINS_FILE, admins)
+    create_backup()
+
+def save_settings(): 
+    jsave(config.SETTINGS_FILE, settings)
+    create_backup()
+
+def save_campaigns(): 
+    jsave(config.CAMPAIGNS_FILE, campaigns)
+    create_backup()
+
+def save_campaign_history(): 
+    jsave(config.CAMPAIGNS_FILE + "_history", campaign_history)
 
 scheduled = []
 def load_scheduled():
@@ -177,10 +367,88 @@ def load_scheduled():
 def save_scheduled():
     try:
         jsave(config.SCHEDULED_FILE, scheduled)
+        create_backup()
     except Exception as ex:
         print(f"[scheduled] save error: {ex}")
 
 load_scheduled()
+
+# ==========================================================
+#  ON STARTUP - AUTO RESTORE IF ACCOUNTS EMPTY
+# ==========================================================
+
+def check_and_restore_on_startup():
+    """Check if accounts are empty and try to restore from backup"""
+    try:
+        # Load current accounts
+        current_accounts = jload(config.ACCOUNTS_FILE, [])
+        
+        # If accounts are empty, try to restore
+        if not current_accounts:
+            print("[STARTUP] No accounts found! Attempting restore from backup...")
+            
+            # Try to restore from latest backup
+            backups = sorted([d for d in os.listdir(BACKUP_DIR) if d.startswith("backup_")])
+            if backups:
+                latest_backup = os.path.join(BACKUP_DIR, backups[-1])
+                accounts_backup = os.path.join(latest_backup, "accounts.json")
+                
+                if os.path.exists(accounts_backup):
+                    try:
+                        with open(accounts_backup) as f:
+                            restored_accounts = json.load(f)
+                        if restored_accounts:
+                            # Restore accounts
+                            jsave(config.ACCOUNTS_FILE, restored_accounts)
+                            print(f"[STARTUP] ✅ Restored {len(restored_accounts)} accounts from backup!")
+                            
+                            # Also restore other files
+                            for file_name in ["admins.json", "settings.json", "campaigns.json", "scheduled.json"]:
+                                backup_file = os.path.join(latest_backup, file_name)
+                                if os.path.exists(backup_file):
+                                    target_file = getattr(config, file_name.upper().replace(".JSON", "_FILE"), None)
+                                    if target_file:
+                                        shutil.copy2(backup_file, target_file)
+                                        print(f"[STARTUP] Restored {file_name}")
+                            
+                            # Reload all data
+                            global accounts, admins, settings, campaigns, scheduled
+                            accounts = jload(config.ACCOUNTS_FILE, [])
+                            raw_admins = jload(config.ADMINS_FILE, [])
+                            admins = []
+                            for a in raw_admins:
+                                if isinstance(a, int):
+                                    admins.append({"id": a, "limit": 0, "name": "Unknown"})
+                                else:
+                                    admins.append(a)
+                            settings = jload(config.SETTINGS_FILE, {})
+                            campaigns = jload(config.CAMPAIGNS_FILE, [])
+                            load_scheduled()
+                            return True
+                    except Exception as e:
+                        print(f"[STARTUP] Error restoring from backup: {e}")
+            
+            # Try to restore from .bak files
+            for file_path in [config.ACCOUNTS_FILE, config.ADMINS_FILE, config.SETTINGS_FILE, config.CAMPAIGNS_FILE]:
+                backup_file = file_path + ".bak"
+                if os.path.exists(backup_file):
+                    try:
+                        shutil.copy2(backup_file, file_path)
+                        print(f"[STARTUP] Restored {file_path} from .bak")
+                    except:
+                        pass
+            
+            # Reload accounts
+            global accounts
+            accounts = jload(config.ACCOUNTS_FILE, [])
+            if accounts:
+                print(f"[STARTUP] ✅ Loaded {len(accounts)} accounts after restore")
+                return True
+        
+        return False
+    except Exception as e:
+        print(f"[STARTUP] Error in check_and_restore: {e}")
+        return False
 
 # ==========================================================
 #  ACCESS CONTROL
@@ -409,7 +677,7 @@ def parse_join_target(text):
     return None
 
 # ==========================================================
-#  CAMPAIGN WORKERS
+#  CAMPAIGN WORKERS (same as before)
 # ==========================================================
 
 RANDOM_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👏", "😍", "💯", "🤩", "🙏", "⚡"]
@@ -952,7 +1220,7 @@ async def check_user_accounts(uid):
     }
 
 # ==========================================================
-#  COMMANDS
+#  COMMANDS (same as before)
 # ==========================================================
 
 @bot.on(events.NewMessage(pattern="^/(start|menu|help)$"))
@@ -969,10 +1237,6 @@ async def cmd_me(e):
                   f"Access: {'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}\n"
                   f"Accounts: {total_accs}\n"
                   f"Limit: {get_user_limit(uid)}", parse_mode="md")
-
-# ==========================================================
-#  ENHANCED /CHECK COMMAND
-# ==========================================================
 
 @bot.on(events.NewMessage(pattern="^/check(?:\s+(\d+))?$"))
 async def cmd_check(e):
@@ -1022,10 +1286,6 @@ async def cmd_check(e):
         lines.append("\n⚠️ No accounts found for this user.")
     
     await e.edit("\n".join(lines), parse_mode="md")
-
-# ==========================================================
-#  ENHANCED /LIST COMMAND
-# ==========================================================
 
 @bot.on(events.NewMessage(pattern="^/list$"))
 async def cmd_list(e):
@@ -1096,10 +1356,6 @@ async def cmd_list(e):
             await e.reply(chunk, parse_mode="md")
     else:
         await e.edit(response, parse_mode="md")
-
-# ==========================================================
-#  /CHECKALL COMMAND
-# ==========================================================
 
 @bot.on(events.NewMessage(pattern="^/checkall$"))
 async def cmd_checkall(e):
@@ -1274,7 +1530,7 @@ async def cmd_stop(e):
         await e.reply("\n".join(lines), parse_mode="md")
 
 # ==========================================================
-#  CALLBACK ROUTER
+#  CALLBACK ROUTER (same as before)
 # ==========================================================
 
 @bot.on(events.CallbackQuery())
@@ -1413,8 +1669,7 @@ async def cb(e):
             "**📋 Commands:**\n"
             "🔹 **/start** - Main menu\n"
             "🔹 **/me** - Your profile\n"
-            "🔹 **/check [user_id]** - Check account status\n"
-            "   (Owner: check other users with ID)\n"
+            "🔹 **/check [user_id]** - Check account status (Owner: check others)\n"
             "🔹 **/list** - List all users with account stats (Owner only)\n"
             "🔹 **/checkall** - Check all accounts (Owner only)\n"
             "🔹 **/stop** - Stop running campaign\n"
@@ -1973,6 +2228,9 @@ async def txt_upload(e):
 async def main():
     load_scheduled()
 
+    # Check and restore accounts if needed
+    check_and_restore_on_startup()
+
     print("[VoteFlow] Preloading accounts...")
     for acc in accounts[:10]:
         try:
@@ -1989,6 +2247,8 @@ async def main():
     print(f"[VoteFlow] Button colors supported: {HAS_BTN_STYLE} "
           f"(pip install -U Telethon to enable colors)")
     print(f"[VoteFlow] Admin Limits active: {sum(1 for a in admins if a.get('limit', 0) > 0)}")
+    print(f"[VoteFlow] Backup directory: {BACKUP_DIR}")
+    print(f"[VoteFlow] Auto-restore enabled!")
 
     await bot.run_until_disconnected()
 
