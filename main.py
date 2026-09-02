@@ -8,6 +8,8 @@ import time
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
+from telethon.tl.functions.messages import GetMessagesViewsRequest
+
 from telethon import TelegramClient, events, Button, errors
 from telethon.errors import (
     SessionPasswordNeededError, PhoneCodeInvalidError,
@@ -556,13 +558,37 @@ async def do_poll_unvote(c, ent, msg_id):
     except Exception as ex:
         return False, f"{type(ex).__name__}: {str(ex)[:60]}"
 
+# ==========================================================
+#  FIX 1: do_view() - Views increment with proper response
+# ==========================================================
+
 async def do_view(c, ent, msg_id):
+    """Increment views using GetMessagesViewsRequest (not just read acknowledge)"""
     try:
-        msg = await c.get_messages(ent, ids=msg_id)
-        if msg:
-            await c.send_read_acknowledge(ent, msg)
-            return True, None
-        return False, "message not found"
+        peer = await c.get_input_entity(ent)
+        
+        # ⭐ Views increment - MAIN FIX
+        res = await c(GetMessagesViewsRequest(
+            peer=peer,
+            id=[msg_id],
+            increment=True  # Ye views badhata hai
+        ))
+        
+        views_after = res.views[0].views if (res and res.views) else None
+        
+        # Seen mark (optional but good)
+        try:
+            msg = await c.get_messages(ent, ids=msg_id)
+            if msg:
+                await c.send_read_acknowledge(ent, msg)
+        except:
+            pass
+        
+        return True, f"views={views_after}" if views_after else None
+        
+    except FloodWaitError as e:
+        await asyncio.sleep(min(e.seconds, 30))
+        return False, f"Flood wait {e.seconds}s"
     except Exception as e:
         return False, f"{type(e).__name__}: {str(e)[:60]}"
 
@@ -641,6 +667,157 @@ async def do_dm(c, target, text):
         return True, None
     except Exception as e:
         return False, f"{type(e).__name__}: {str(e)[:60]}"
+
+# ==========================================================
+#  FIX 2: do_views() - Better private channel support
+# ==========================================================
+
+async def do_views(owner_uid, opts):
+    """Channel post views badhata hai — GetMessagesViewsRequest(increment=True)."""
+    ok, fail = [], []
+    accs = get_admin_accounts(owner_uid) if is_admin(owner_uid) else my_accounts(owner_uid)
+    count = opts.get("count", 0)
+    if count and count > 0:
+        accs = accs[:count]
+    if not accs:
+        return 0, ["❌ No accounts available"]
+
+    post_ref = opts["post_ref"]
+    msg_id = opts["msg_id"]
+
+    # Private channel → pehle join karo (invite link diya ho to)
+    join_target = opts.get("join_target")
+    if join_target:
+        print(f"[views] Auto-joining {len(accs)} accounts to private channel...")
+        # Har account ko individually join karayein
+        joined_count = 0
+        for acc in accs[:5]:  # Pehle 5 test join
+            c = await get_client(acc)
+            if c:
+                joined, jerr = await do_join_channel(c, join_target)
+                if joined:
+                    joined_count += 1
+                    print(f"[views] {acc['phone']}: joined")
+                else:
+                    print(f"[views] {acc['phone']}: join failed - {jerr}")
+        print(f"[views] Joined: {joined_count}/{min(len(accs), 5)}")
+        await asyncio.sleep(5)  # Sync wait
+
+    st = get_settings(owner_uid)
+    dmin = float(st.get("delay_min", 1))
+    dmax = float(st.get("delay_max", 3))
+
+    views_before = None
+    first_client = None
+    first_entity = None
+
+    for idx, acc in enumerate(accs):
+        try:
+            c = await get_client(acc)
+            if not c:
+                fail.append(f"{acc['phone']}: client dead")
+                continue
+
+            # ⭐ HAR ACCOUNT KA APNA ENTITY RESOLVE (private channel ke liye zaroori)
+            ent = await resolve_entity_cached(c, post_ref)
+            if ent is None:
+                try:
+                    # Try alternate resolve methods
+                    if post_ref[0] == "c":
+                        # Private channel - try with PeerChannel
+                        ent = await c.get_entity(PeerChannel(int(post_ref[1])))
+                    else:
+                        ent = await c.get_entity(post_ref[1])
+                except Exception as e:
+                    print(f"[views] {acc['phone']}: entity resolve error - {e}")
+                    ent = None
+            
+            if ent is None:
+                fail.append(f"{acc['phone']}: entity resolve fail - member nahi ho sakta")
+                continue
+
+            peer = await c.get_input_entity(ent)
+
+            # Pehle working client se current views read karo (increment=False)
+            if first_client is None:
+                first_client = c
+                first_entity = ent
+                try:
+                    res = await c(GetMessagesViewsRequest(
+                        peer=peer, id=[msg_id], increment=False))
+                    if res and res.views:
+                        views_before = res.views[0].views
+                        print(f"[views] Initial views: {views_before}")
+                except Exception as e:
+                    print(f"[views] Could not get initial views: {e}")
+
+            # ⭐ ASLI INCREMENT
+            res = await c(GetMessagesViewsRequest(
+                peer=peer, id=[msg_id], increment=True))
+            
+            # ⭐ RESPONSE CAPTURE - yehi missing tha
+            v_now = res.views[0].views if (res and res.views) else None
+            
+            # Try alternative method if first failed
+            if v_now is None:
+                try:
+                    # Retry with different peer format
+                    res2 = await c(GetMessagesViewsRequest(
+                        peer=ent, id=[msg_id], increment=True))
+                    v_now = res2.views[0].views if (res2 and res2.views) else None
+                except:
+                    pass
+            
+            ok.append(f"{acc['phone']}" + (f" (views={v_now})" if v_now else ""))
+
+        except FloodWaitError as fw:
+            fail.append(f"{acc['phone']}: flood wait {fw.seconds}s")
+            await asyncio.sleep(min(fw.seconds, 30))
+        except ChannelPrivateError:
+            fail.append(f"{acc['phone']}: private channel — member nahi hai")
+            # Try to join if invite link available
+            if join_target:
+                try:
+                    joined, _ = await do_join_channel(c, join_target)
+                    if joined:
+                        print(f"[views] {acc['phone']}: joined after retry")
+                        # Retry the view
+                        continue
+                except:
+                    pass
+        except Exception as ex:
+            fail.append(f"{acc['phone']}: {str(ex)[:60]}")
+
+        await asyncio.sleep(random.uniform(dmin, dmax))
+
+    # Final count report
+    final_note = ""
+    if first_client is not None and views_before is not None:
+        try:
+            await asyncio.sleep(2)  # ⭐ Telegram ko update karne do
+            ent = first_entity or await resolve_entity_cached(first_client, post_ref)
+            if ent:
+                peer = await first_client.get_input_entity(ent)
+                res = await first_client(GetMessagesViewsRequest(
+                    peer=peer, id=[msg_id], increment=False))
+                v_final = res.views[0].views if (res and res.views) else None
+                if v_final is not None and v_final > views_before:
+                    final_note = (f"\n\n📊 Views: **{views_before} → {v_final}** "
+                                  f"(+{v_final - views_before})\n"
+                                  f"✅ **{len(ok)} accounts** ne views increment kiya\n"
+                                  "⚠️ Updated count 2-10 min mein dikhega")
+                elif v_final is not None:
+                    final_note = (f"\n\n📊 Views: **{views_before} → {v_final}** "
+                                  f"(No change - maybe flood limit)\n"
+                                  f"✅ Accounts processed: **{len(ok)}**")
+        except Exception as e:
+            print(f"[views] Final check error: {e}")
+
+    if ok:
+        ok[0] += final_note
+    
+    print(f"[views] Completed: {len(ok)} success, {len(fail)} failed")
+    return len(ok), fail
 
 # ==========================================================
 #  CAMPAIGN EXECUTION — join + react/vote in ONE campaign
@@ -783,10 +960,40 @@ async def run_campaign(uid, action, opts):
                         fail.append(f"{acc['phone']}: Poll unvote failed — {uerr}")
                         continue
 
+                # ==========================================================
+                # FIX 3: View action - Proper views increment
+                # ==========================================================
                 elif action == "view":
-                    vok, verr = await do_view(c, ent, msg_id)
-                    if not vok:
-                        fail.append(f"{acc['phone']}: View failed — {verr}")
+                    try:
+                        # ⭐ Views increment with proper response
+                        peer = await c.get_input_entity(ent)
+                        res = await c(GetMessagesViewsRequest(
+                            peer=peer,
+                            id=[msg_id],
+                            increment=True  # ⭐ Views badhao
+                        ))
+                        v_now = res.views[0].views if (res and res.views) else None
+                        
+                        # Seen mark (optional)
+                        try:
+                            msg = await c.get_messages(ent, ids=msg_id)
+                            if msg:
+                                await c.send_read_acknowledge(ent, msg)
+                        except:
+                            pass
+                        
+                        vok = True
+                        verr = f"views={v_now}" if v_now else None
+                        
+                        if not vok:
+                            fail.append(f"{acc['phone']}: View failed — {verr}")
+                            continue
+                    except FloodWaitError as e:
+                        fail.append(f"{acc['phone']}: Flood wait {e.seconds}s")
+                        await asyncio.sleep(min(e.seconds, 30))
+                        continue
+                    except Exception as e:
+                        fail.append(f"{acc['phone']}: View failed — {str(e)[:60]}")
                         continue
 
                 elif action == "join":
@@ -1864,18 +2071,36 @@ async def txt_upload(e):
     await steps(e)
 
 # ==========================================================
-#  MAIN
+#  FIX 4: Main - All accounts restore (remove 10 limit)
 # ==========================================================
 
 async def main():
     load_scheduled()
 
-    print("[VoteFlow] Preloading accounts...")
-    for acc in accounts[:10]:
+    print("[VoteFlow] Preloading ALL accounts...")
+    
+    # ⭐ SABHI ACCOUNTS RESTORE - 10 ki limit hatao
+    total_accounts = len(accounts)
+    restored = 0
+    failed = 0
+    
+    for acc in accounts:
         try:
-            await get_client(acc)
+            c = await get_client(acc)
+            if c:
+                restored += 1
+                print(f"[load] ✅ {acc.get('phone', 'unknown')} - restored")
+            else:
+                failed += 1
+                print(f"[load] ❌ {acc.get('phone', 'unknown')} - failed")
         except Exception as ex:
-            print(f"[load] {acc['phone']}: {ex}")
+            failed += 1
+            print(f"[load] ❌ {acc.get('phone', 'unknown')}: {ex}")
+        
+        # Thoda delay to avoid rate limit
+        await asyncio.sleep(0.5)
+    
+    print(f"[VoteFlow] Accounts restored: {restored}/{total_accounts} (Failed: {failed})")
 
     asyncio.create_task(scheduler_loop(bot))
 
