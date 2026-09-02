@@ -7,7 +7,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 API_ID = int(os.getenv("API_ID", "123456"))          # Railway Variables me daalo
 API_HASH = os.getenv("API_HASH", "your_api_hash")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token")
-OWNER_IDS = [int(x) for x in os.getenv("OWNER_IDS", "123456789").split(",") if x.strip()]
+OWNER_IDS = [int(x) for x in os.getenv("OWNER_IDS", "8076739291","8880226666").split(",") if x.strip()]
 
 SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
 ACCOUNTS_FILE = os.path.join(DATA_DIR, "accounts.json")
