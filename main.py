@@ -53,7 +53,7 @@ LOCK = threading.Lock()
 #  CREDITS
 # ==========================================================
 
-SUPPORT_BOT = "Aetherhu_bot"     # Support button → opens this bot
+SUPPORT_BOT = "Aetherhu_bot"
 
 # Check Telethon version for premium button support
 try:
@@ -100,7 +100,6 @@ def styled_btn(text, data, style=None, emoji_id=None):
     # Try premium emoji if supported
     if emoji_id and HAS_PREMIUM_BUTTONS:
         try:
-            # Style ko properly handle karein
             btn_style = None
             if HAS_BTN_STYLE and style:
                 flag_map = {
