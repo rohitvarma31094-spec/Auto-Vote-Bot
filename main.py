@@ -8,8 +8,6 @@ import time
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
-from telethon.tl.functions.messages import GetMessagesViewsRequest
-
 from telethon import TelegramClient, events, Button, errors
 from telethon.errors import (
     SessionPasswordNeededError, PhoneCodeInvalidError,
@@ -23,7 +21,8 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.messages import (
     ImportChatInviteRequest, SendVoteRequest, GetBotCallbackAnswerRequest,
     CheckChatInviteRequest, GetMessagesRequest,
-    SendReactionRequest
+    SendReactionRequest,
+    GetMessagesViewsRequest
 )
 
 from telethon.tl.functions.channels import (
@@ -51,6 +50,29 @@ os.makedirs(config.SESSIONS_DIR, exist_ok=True)
 LOCK = threading.Lock()
 
 # ==========================================================
+#  CREDITS & PREMIUM EMOJIS
+# ==========================================================
+
+CREDIT_BOT = "Aetherhu_bot"     # Support button → opens this bot
+DEVELOPER  = "Yuvan_27k"        # Developer credit
+
+# Premium custom emoji IDs (for premium account reactions)
+PREMIUM_CUSTOM_EMOJIS = {
+    "⭐": "6086784551894389168",
+    "🎀": "6328086148274986212",
+    "😎": "6334696528145286813",
+    "🧊": "6057592848889418693",
+    "👶": "6129399728506412489",
+    "🚩": "6082673701256434858",
+    "👼": "6235505186157107501",
+    "🧸": "6235332768989976110",
+}
+
+# Actions jinke beech TIMER chalega (account spacing)
+TIMER_ACTIONS = ("react", "react_vote", "react_vote_view", "vote",
+                 "unvote", "poll_vote", "join", "join_request")
+
+# ==========================================================
 #  STYLISH FONTS
 # ==========================================================
 
@@ -66,14 +88,12 @@ def fancy(t: str) -> str:
     return str(t).translate(_BOLD)
 
 async def send(e, text, **kw):
-    """Works from both NewMessage and CallbackQuery events"""
     f = getattr(e, "reply", None)
     if f is None:
         f = e.respond
     return await f(text, **kw)
 
 def styled_btn(text, data, style=None):
-    """Colored inline button — 'primary'=blue, 'success'=green, 'danger'=red."""
     if HAS_BTN_STYLE and style:
         flag_map = {
             "primary": dict(bg_primary=True),
@@ -90,7 +110,7 @@ def styled_btn(text, data, style=None):
     return Button.inline(text, data)
 
 # ==========================================================
-#  PREMIUM EMOJIS
+#  PREMIUM EMOJIS (reaction custom ids)
 # ==========================================================
 
 class PremiumEmojis:
@@ -99,7 +119,7 @@ class PremiumEmojis:
     ADMIN = "👑"; STATS = "📊"; SETTINGS = "⚙️"; CLEAR = "🗑️"
     CHANNEL = "📡"; CONFIRM = "✅"; CHART = "📈"; CROWN = "👑"
     ALERT = "🚨"; SEARCH = "🔍"; SPEAKER = "🔊"; LOCK = "🔒"
-    ID = "🆔"; STAR = "⭐"; REQUEST = "📩"; CLOCK = "⏰"
+    ID = "🆔"; STAR = "⭐"; REQUEST = "📩"; CLOCK = "⏰"; TIMER = "⏱️"
 
     REACTION_EMOJIS = {
         "☺️": "6289363706681755465",
@@ -114,6 +134,15 @@ class PremiumEmojis:
         "🚀": "5188481279963715781",
         "🙌": "6237621707385871360",
         "👏": "6237621707385871360",
+        # ── User-supplied premium custom emoji ids ──
+        "⭐": "6086784551894389168",
+        "🎀": "6328086148274986212",
+        "😎": "6334696528145286813",
+        "🧊": "6057592848889418693",
+        "👶": "6129399728506412489",
+        "🚩": "6082673701256434858",
+        "👼": "6235505186157107501",
+        "🧸": "6235332768989976110",
     }
 
 # ==========================================================
@@ -412,6 +441,29 @@ def parse_join_target(text):
         return ("id", int(u))
     return None
 
+def parse_timer(text):
+    """'30' / '30s' → 30 sec, '2m' → 120 sec, '0'/'off' → 0. None = invalid."""
+    t = text.strip().lower()
+    if t in ("0", "off", "no"):
+        return 0
+    m = re.fullmatch(r"(\d+)\s*([sm]?)", t)
+    if not m:
+        return None
+    val = int(m.group(1))
+    unit = m.group(2) or "s"
+    if unit == "m":
+        val *= 60
+    if val > 3600:
+        return None
+    return val
+
+def fmt_timer(sec):
+    if not sec:
+        return "OFF (instant)"
+    if sec % 60 == 0 and sec >= 60:
+        return f"{sec // 60} min"
+    return f"{sec} sec"
+
 # ==========================================================
 #  CAMPAIGN WORKERS — all return (ok, error_string)
 # ==========================================================
@@ -435,10 +487,6 @@ async def get_allowed_reactions(c, ent):
     return None
 
 async def do_react(c, ent, msg_id, emoji):
-    """Send reaction with full fallback chain:
-    1) Premium custom emoji (if account is Premium)
-    2) Standard emoji
-    3) If chat restricts reactions → auto-pick an ALLOWED reaction and retry."""
     if emoji and emoji.lower() in ("random", "rand", "r", "🍀"):
         emoji = random.choice(RANDOM_EMOJIS)
     emoji = (emoji or "👍").strip()
@@ -449,10 +497,8 @@ async def do_react(c, ent, msg_id, emoji):
                 await c.send_reaction(ent, msg_id, reaction=react_obj)
             else:
                 await c(SendReactionRequest(
-                    peer=ent,
-                    msg_id=msg_id,
-                    reaction=[react_obj],
-                    add_to_recent=True
+                    peer=ent, msg_id=msg_id,
+                    reaction=[react_obj], add_to_recent=True
                 ))
             return True, None
         except ReactionInvalidError:
@@ -460,19 +506,16 @@ async def do_react(c, ent, msg_id, emoji):
         except Exception as ex:
             return False, f"{type(ex).__name__}: {str(ex)[:60]}"
 
-    # 1) Premium custom emoji
     doc_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
     if doc_id:
         ok, err = await attempt(ReactionCustomEmoji(document_id=int(doc_id)))
         if ok:
             return True, None
 
-    # 2) Standard emoji
     ok, err = await attempt(ReactionEmoji(emoticon=emoji))
     if ok:
         return True, None
 
-    # 3) Check allowed reactions and retry with a valid one
     allowed = await get_allowed_reactions(c, ent)
     if allowed == []:
         return False, "reactions are DISABLED in this chat"
@@ -492,7 +535,6 @@ async def do_react(c, ent, msg_id, emoji):
     return False, err or "reaction rejected by Telegram"
 
 async def do_unreact(c, ent, msg_id):
-    """Remove reaction — empty reaction list bhejne se reaction hat jata hai."""
     try:
         if hasattr(c, 'send_reaction'):
             await c.send_reaction(ent, msg_id, reaction=[])
@@ -503,7 +545,6 @@ async def do_unreact(c, ent, msg_id):
         return False, f"{type(ex).__name__}: {str(ex)[:60]}"
 
 async def do_vote(c, ent, msg_id, btn_index, btn_text):
-    """Vote = click an inline button on the post. Returns (ok, error)"""
     try:
         msg = await c.get_messages(ent, ids=msg_id)
         if not msg or not msg.buttons:
@@ -548,7 +589,6 @@ async def do_poll_vote(c, ent, msg_id, poll_options):
         return False, f"{type(e).__name__}: {str(e)[:60]}"
 
 async def do_poll_unvote(c, ent, msg_id):
-    """Poll vote hatao — empty options = vote retract."""
     try:
         msg = await c.get_messages(ent, ids=msg_id)
         if not msg or not msg.poll:
@@ -558,34 +598,23 @@ async def do_poll_unvote(c, ent, msg_id):
     except Exception as ex:
         return False, f"{type(ex).__name__}: {str(ex)[:60]}"
 
-# ==========================================================
-#  FIX 1: do_view() - Views increment with proper response
-# ==========================================================
-
 async def do_view(c, ent, msg_id):
-    """Increment views using GetMessagesViewsRequest (not just read acknowledge)"""
+    """⭐ Views increment — GetMessagesViewsRequest(increment=True).
+    Note: 1 account = 1 view per post per ~24h (Telegram rule)."""
     try:
         peer = await c.get_input_entity(ent)
-        
-        # ⭐ Views increment - MAIN FIX
         res = await c(GetMessagesViewsRequest(
-            peer=peer,
-            id=[msg_id],
-            increment=True  # Ye views badhata hai
-        ))
-        
+            peer=peer, id=[msg_id], increment=True))
         views_after = res.views[0].views if (res and res.views) else None
-        
-        # Seen mark (optional but good)
+
         try:
             msg = await c.get_messages(ent, ids=msg_id)
             if msg:
                 await c.send_read_acknowledge(ent, msg)
-        except:
+        except Exception:
             pass
-        
-        return True, f"views={views_after}" if views_after else None
-        
+
+        return True, (f"views={views_after}" if views_after else None)
     except FloodWaitError as e:
         await asyncio.sleep(min(e.seconds, 30))
         return False, f"Flood wait {e.seconds}s"
@@ -593,7 +622,6 @@ async def do_view(c, ent, msg_id):
         return False, f"{type(e).__name__}: {str(e)[:60]}"
 
 async def do_join_channel(c, target, channel_info=None):
-    """Join public/private/ID. Returns (ok, error)"""
     kind, val = target
     try:
         if kind == "invite":
@@ -669,158 +697,7 @@ async def do_dm(c, target, text):
         return False, f"{type(e).__name__}: {str(e)[:60]}"
 
 # ==========================================================
-#  FIX 2: do_views() - Better private channel support
-# ==========================================================
-
-async def do_views(owner_uid, opts):
-    """Channel post views badhata hai — GetMessagesViewsRequest(increment=True)."""
-    ok, fail = [], []
-    accs = get_admin_accounts(owner_uid) if is_admin(owner_uid) else my_accounts(owner_uid)
-    count = opts.get("count", 0)
-    if count and count > 0:
-        accs = accs[:count]
-    if not accs:
-        return 0, ["❌ No accounts available"]
-
-    post_ref = opts["post_ref"]
-    msg_id = opts["msg_id"]
-
-    # Private channel → pehle join karo (invite link diya ho to)
-    join_target = opts.get("join_target")
-    if join_target:
-        print(f"[views] Auto-joining {len(accs)} accounts to private channel...")
-        # Har account ko individually join karayein
-        joined_count = 0
-        for acc in accs[:5]:  # Pehle 5 test join
-            c = await get_client(acc)
-            if c:
-                joined, jerr = await do_join_channel(c, join_target)
-                if joined:
-                    joined_count += 1
-                    print(f"[views] {acc['phone']}: joined")
-                else:
-                    print(f"[views] {acc['phone']}: join failed - {jerr}")
-        print(f"[views] Joined: {joined_count}/{min(len(accs), 5)}")
-        await asyncio.sleep(5)  # Sync wait
-
-    st = get_settings(owner_uid)
-    dmin = float(st.get("delay_min", 1))
-    dmax = float(st.get("delay_max", 3))
-
-    views_before = None
-    first_client = None
-    first_entity = None
-
-    for idx, acc in enumerate(accs):
-        try:
-            c = await get_client(acc)
-            if not c:
-                fail.append(f"{acc['phone']}: client dead")
-                continue
-
-            # ⭐ HAR ACCOUNT KA APNA ENTITY RESOLVE (private channel ke liye zaroori)
-            ent = await resolve_entity_cached(c, post_ref)
-            if ent is None:
-                try:
-                    # Try alternate resolve methods
-                    if post_ref[0] == "c":
-                        # Private channel - try with PeerChannel
-                        ent = await c.get_entity(PeerChannel(int(post_ref[1])))
-                    else:
-                        ent = await c.get_entity(post_ref[1])
-                except Exception as e:
-                    print(f"[views] {acc['phone']}: entity resolve error - {e}")
-                    ent = None
-            
-            if ent is None:
-                fail.append(f"{acc['phone']}: entity resolve fail - member nahi ho sakta")
-                continue
-
-            peer = await c.get_input_entity(ent)
-
-            # Pehle working client se current views read karo (increment=False)
-            if first_client is None:
-                first_client = c
-                first_entity = ent
-                try:
-                    res = await c(GetMessagesViewsRequest(
-                        peer=peer, id=[msg_id], increment=False))
-                    if res and res.views:
-                        views_before = res.views[0].views
-                        print(f"[views] Initial views: {views_before}")
-                except Exception as e:
-                    print(f"[views] Could not get initial views: {e}")
-
-            # ⭐ ASLI INCREMENT
-            res = await c(GetMessagesViewsRequest(
-                peer=peer, id=[msg_id], increment=True))
-            
-            # ⭐ RESPONSE CAPTURE - yehi missing tha
-            v_now = res.views[0].views if (res and res.views) else None
-            
-            # Try alternative method if first failed
-            if v_now is None:
-                try:
-                    # Retry with different peer format
-                    res2 = await c(GetMessagesViewsRequest(
-                        peer=ent, id=[msg_id], increment=True))
-                    v_now = res2.views[0].views if (res2 and res2.views) else None
-                except:
-                    pass
-            
-            ok.append(f"{acc['phone']}" + (f" (views={v_now})" if v_now else ""))
-
-        except FloodWaitError as fw:
-            fail.append(f"{acc['phone']}: flood wait {fw.seconds}s")
-            await asyncio.sleep(min(fw.seconds, 30))
-        except ChannelPrivateError:
-            fail.append(f"{acc['phone']}: private channel — member nahi hai")
-            # Try to join if invite link available
-            if join_target:
-                try:
-                    joined, _ = await do_join_channel(c, join_target)
-                    if joined:
-                        print(f"[views] {acc['phone']}: joined after retry")
-                        # Retry the view
-                        continue
-                except:
-                    pass
-        except Exception as ex:
-            fail.append(f"{acc['phone']}: {str(ex)[:60]}")
-
-        await asyncio.sleep(random.uniform(dmin, dmax))
-
-    # Final count report
-    final_note = ""
-    if first_client is not None and views_before is not None:
-        try:
-            await asyncio.sleep(2)  # ⭐ Telegram ko update karne do
-            ent = first_entity or await resolve_entity_cached(first_client, post_ref)
-            if ent:
-                peer = await first_client.get_input_entity(ent)
-                res = await first_client(GetMessagesViewsRequest(
-                    peer=peer, id=[msg_id], increment=False))
-                v_final = res.views[0].views if (res and res.views) else None
-                if v_final is not None and v_final > views_before:
-                    final_note = (f"\n\n📊 Views: **{views_before} → {v_final}** "
-                                  f"(+{v_final - views_before})\n"
-                                  f"✅ **{len(ok)} accounts** ne views increment kiya\n"
-                                  "⚠️ Updated count 2-10 min mein dikhega")
-                elif v_final is not None:
-                    final_note = (f"\n\n📊 Views: **{views_before} → {v_final}** "
-                                  f"(No change - maybe flood limit)\n"
-                                  f"✅ Accounts processed: **{len(ok)}**")
-        except Exception as e:
-            print(f"[views] Final check error: {e}")
-
-    if ok:
-        ok[0] += final_note
-    
-    print(f"[views] Completed: {len(ok)} success, {len(fail)} failed")
-    return len(ok), fail
-
-# ==========================================================
-#  CAMPAIGN EXECUTION — join + react/vote in ONE campaign
+#  CAMPAIGN EXECUTION
 # ==========================================================
 
 async def run_campaign(uid, action, opts):
@@ -837,6 +714,13 @@ async def run_campaign(uid, action, opts):
     random.shuffle(accs)
     st = get_settings(uid)
     ok, fail = 0, []
+
+    # ⏱ TIMER — spacing between accounts (sec-min). 0 = no timer.
+    timer = int(opts.get("timer", 0) or 0)
+    use_timer = action in TIMER_ACTIONS and timer > 0
+    if use_timer:
+        print(f"[campaign] {action} — timer ON: {timer}s between accounts, "
+              f"{len(accs)} accounts (~{timer * len(accs) // 60} min total)")
 
     post_ref = opts.get("post_ref")
     msg_id = opts.get("msg_id")
@@ -857,6 +741,14 @@ async def run_campaign(uid, action, opts):
 
     try:
         for i, acc in enumerate(accs):
+            # ⏱ TIMER WAIT — har account ke beech (pehla turant)
+            if use_timer and i > 0:
+                if active_campaigns.get(campaign_id, {}).get('stopped'):
+                    fail.append(f"Campaign stopped at {i} accounts")
+                    break
+                print(f"[campaign] timer: waiting {timer}s before account {i+1}/{len(accs)}")
+                await asyncio.sleep(timer)
+
             if active_campaigns.get(campaign_id, {}).get('stopped'):
                 fail.append(f"Campaign stopped at {i} accounts")
                 break
@@ -880,7 +772,7 @@ async def run_campaign(uid, action, opts):
                 if post_ref:
                     ent = await resolve_entity_cached(c, post_ref)
                     if ent is None:
-                        ent = await resolve_entity(c, post_ref)   # fresh, no cache
+                        ent = await resolve_entity(c, post_ref)
                     if not ent and target:
                         ent = await resolve_entity_cached(c, target)
 
@@ -889,7 +781,7 @@ async def run_campaign(uid, action, opts):
                                 f"join failed or invite link missing")
                     continue
 
-                # ── STEP 2.5: Pre-check — message visible hai? ──
+                # ── STEP 2.5: Pre-check — message visible? ──
                 if post_ref and ent is not None:
                     try:
                         test = await c.get_messages(ent, ids=msg_id)
@@ -960,41 +852,13 @@ async def run_campaign(uid, action, opts):
                         fail.append(f"{acc['phone']}: Poll unvote failed — {uerr}")
                         continue
 
-                # ==========================================================
-                # FIX 3: View action - Proper views increment
-                # ==========================================================
                 elif action == "view":
-                    try:
-                        # ⭐ Views increment with proper response
-                        peer = await c.get_input_entity(ent)
-                        res = await c(GetMessagesViewsRequest(
-                            peer=peer,
-                            id=[msg_id],
-                            increment=True  # ⭐ Views badhao
-                        ))
-                        v_now = res.views[0].views if (res and res.views) else None
-                        
-                        # Seen mark (optional)
-                        try:
-                            msg = await c.get_messages(ent, ids=msg_id)
-                            if msg:
-                                await c.send_read_acknowledge(ent, msg)
-                        except:
-                            pass
-                        
-                        vok = True
-                        verr = f"views={v_now}" if v_now else None
-                        
-                        if not vok:
-                            fail.append(f"{acc['phone']}: View failed — {verr}")
-                            continue
-                    except FloodWaitError as e:
-                        fail.append(f"{acc['phone']}: Flood wait {e.seconds}s")
-                        await asyncio.sleep(min(e.seconds, 30))
+                    vok, verr = await do_view(c, ent, msg_id)
+                    if not vok:
+                        fail.append(f"{acc['phone']}: View failed — {verr}")
                         continue
-                    except Exception as e:
-                        fail.append(f"{acc['phone']}: View failed — {str(e)[:60]}")
-                        continue
+                    if verr:
+                        print(f"[view] {acc['phone']}: {verr}")
 
                 elif action == "join":
                     if target:
@@ -1140,6 +1004,9 @@ MAIN_MENU = [
     [styled_btn(f"{PremiumEmojis.CANCEL} Leave Channel", b"leave_menu", "danger"),
      Button.inline(f"{PremiumEmojis.SEARCH} Help", b"help")],
     [styled_btn(f"{PremiumEmojis.CLEAR} Remove Account", b"remove_acc", "danger")],
+    # ── Support & Developer (opens bot / profile) ──
+    [Button.url(f"{PremiumEmojis.MANAGE} Support", f"https://t.me/{CREDIT_BOT}"),
+     Button.url(f"{PremiumEmojis.CROWN} Developer", f"https://t.me/{DEVELOPER}")],
 ]
 
 def menu_text(uid):
@@ -1159,13 +1026,16 @@ def menu_text(uid):
         text += f"│ Total Bot Accounts: **{get_total_accounts()}**\n"
 
     text += (f"└──────────────────────┘\n\n"
-             f"{PremiumEmojis.LOCK} **Access:** **{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n")
+             f"{PremiumEmojis.LOCK} **Access:** "
+             f"**{'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}**\n\n"
+             f"🤖 **Auto Vote • React • Members • DM**\n"
+             f"👑 **Developed by** @{DEVELOPER}")
 
     if is_owner(uid):
-        text += (f"{PremiumEmojis.CHART} **Global Stats:**\n"
+        text += (f"\n\n{PremiumEmojis.CHART} **Global Stats:**\n"
                  f"Total Accounts: **{get_total_accounts()}**\n"
                  f"Running Campaigns: **{len(get_running_campaigns())}**\n"
-                 f"Total Users: **{len(set(a.get('owner') for a in accounts))}**\n")
+                 f"Total Users: **{len(set(a.get('owner') for a in accounts))}**")
 
     return text
 
@@ -1189,14 +1059,15 @@ async def cmd_me(e):
                   f"ID: `{uid}`\n"
                   f"Access: {'👑 Owner' if is_owner(uid) else ('✅ Admin' if is_admin(uid) else '👤 User')}\n"
                   f"Accounts: {total_accs}\n"
-                  f"Limit: {get_user_limit(uid)}", parse_mode="md")
+                  f"Limit: {get_user_limit(uid)}\n\n"
+                  f"👑 Developed by @{DEVELOPER}", parse_mode="md")
 
 @bot.on(events.NewMessage(pattern="^/list$"))
 async def cmd_list(e):
     if not is_owner(e.sender_id):
         return await e.reply("⛔ Owner Only!", parse_mode="md")
     if not accounts:
-        return await e.reply("❌ Koi account added nahi hai.", parse_mode="md")
+        return await e.reply("❌ No accounts added yet.", parse_mode="md")
 
     owners = {}
     for a in accounts:
@@ -1216,19 +1087,18 @@ async def cmd_check(e):
     uid = e.sender_id
     target = e.pattern_match.group(1)
 
-    # Sirf owner kisi AUR ka check kar sakta hai
     if target and int(target) != uid:
         if not is_owner(uid):
-            return await e.reply("⛔ Sirf OWNER kisi aur user ka report dekh sakta hai.", parse_mode="md")
+            return await e.reply("⛔ Only the OWNER can view another user's report.", parse_mode="md")
         check_id = int(target)
         accs = [a for a in accounts if a.get("owner") == check_id]
         if not accs:
-            return await e.reply(f"❌ User `{check_id}` ke koi accounts nahi mile.", parse_mode="md")
+            return await e.reply(f"❌ No accounts found for user `{check_id}`.", parse_mode="md")
     else:
         check_id = uid
         accs = get_admin_accounts(uid) if is_admin(uid) else [a for a in accounts if a.get("owner") == uid]
 
-    await e.reply(f"🔍 **{fancy('CHECKING ACCOUNTS...')}**\nTotal: {len(accs)} (thoda time lagega)")
+    await e.reply(f"🔍 **{fancy('CHECKING ACCOUNTS...')}**\nTotal: {len(accs)} (this may take a moment)")
 
     total = len(accs)
     active, expired = 0, []
@@ -1254,7 +1124,7 @@ async def cmd_check(e):
         for acc in expired[:20]:
             lines.append(f"🔴 `{acc['phone']}` — {acc.get('name', '?')}")
         if len(expired) > 20:
-            lines.append(f"...aur {len(expired) - 20} more")
+            lines.append(f"...and {len(expired) - 20} more")
     await e.reply("\n".join(lines), parse_mode="md")
 
 async def check_status(uid):
@@ -1396,12 +1266,12 @@ async def cb(e):
             return await e.answer(f"✅ Button {idx} selected: {(btns[idx-1].text or '?')[:30]}")
         return await e.answer("Invalid button", alert=True)
 
-    # ── Reaction type choice: Specific / Random ──
+    # ── Reaction type choice ──
     if data == "react_specific":
         s = state(uid)
         s["step"] = "camp_emoji"
         return await e.edit("😀 **Send the emoji** you want:\n\n"
-                            "`👍` `❤️` `🔥` `🎉` `💎` `👑` `😍` `🚀` `☺️`\n"
+                            "`👍` `❤️` `🔥` `🎉` `💎` `👑` `😍` `🚀` `☺️` `⭐` `🎀` `😎` `🧊` `🚩`\n"
                             "or type any emoji.\n\n"
                             "💡 Premium custom emoji versions are used automatically "
                             "when the account has Telegram Premium.",
@@ -1508,21 +1378,23 @@ async def cb(e):
             "1️⃣ Add Accounts (Phone+OTP / Session / Bulk)\n"
             "2️⃣ New Campaign → pick action\n"
             "3️⃣ Bot shows the post & its real buttons → click to select\n"
-            "4️⃣ Run!\n\n"
+            "4️⃣ Set Timer → Run!\n\n"
+            "**⏱️ Timer:** After choosing account count, set a spacing timer "
+            "(`30s` / `1m` / `2m`...). Each account acts one-by-one with that gap — "
+            "perfect for Join Requests, Votes & Reacts. `0` = instant.\n\n"
             "**🎯 React:** choose 🎯 Specific or 🎲 Random emoji.\n"
             "**🗑️ Remove Reaction / Poll Vote:** dedicated actions in menu.\n\n"
             "**🗳️ Vote:** bot opens the post and shows its actual inline buttons — "
             "just click one.\n\n"
-            "**🔐 Private channels:** Send the post link → bot asks for invite link "
-            "→ accounts JOIN first, then React/Vote automatically.\n\n"
-            "**⚠️ If reactions keep failing:**\n"
-            "• The error shows the REAL reason (read the fail report)\n"
-            "• 'reactions are DISABLED' = the channel turned reactions off\n\n"
+            "**🔐 Private channels & groups:** Send the post link → bot asks for invite "
+            "link → accounts JOIN first, then React/Vote automatically.\n\n"
             "**🔧 Commands:**\n"
             "/start /me /list /check [user_id] /stop /addadmin /rmadmin /adminlist\n\n"
-            "💡 **Tips:** Count `0` = all accounts. Set delay `1-3` in Settings.",
+            "💡 **Tips:** Count `0` = all accounts. Set delay `1-3` in Settings.\n\n"
+            f"👑 Developed by @{DEVELOPER}",
             parse_mode="md",
-            buttons=[[Button.inline("« Back", b"menu")]]
+            buttons=[[Button.url(f"{PremiumEmojis.MANAGE} Support", f"https://t.me/{CREDIT_BOT}"),
+                      Button.inline("« Back", b"menu")]]
         )
 
     # ── Add Account ──
@@ -1632,8 +1504,8 @@ async def cb(e):
         if key in ("join", "join_request", "leave", "dm"):
             s["step"] = "camp_target"
             hints = {
-                "join": f"{PremiumEmojis.JOIN} **Join Channel**\n\nSend channel link or username:\n`@channel`\n`https://t.me/channel`\n`https://t.me/+invite_hash`",
-                "join_request": f"{PremiumEmojis.REQUEST} **Join Request**\n\nSend channel invite link:\n`https://t.me/+invite_hash`",
+                "join": f"{PremiumEmojis.JOIN} **Join Channel / Group**\n\nSend channel link or username:\n`@channel`\n`https://t.me/channel`\n`https://t.me/+invite_hash`",
+                "join_request": f"{PremiumEmojis.REQUEST} **Join Request**\n\nSend channel invite link:\n`https://t.me/+invite_hash`\n\n⏱️ A spacing timer will be asked after the count — accounts send requests one-by-one.",
                 "leave": f"{PremiumEmojis.CANCEL} **Leave**\nSend channel link or username",
                 "dm": f"{PremiumEmojis.SPEAKER} **DM**\nSend username or user id",
             }
@@ -1655,7 +1527,7 @@ async def cb(e):
             await e.answer(no_access(), alert=True)
             return
         s = state(uid)
-        await e.edit("⏳ Running campaign...")
+        await e.edit("⏳ Running campaign... (timer campaigns may take a while — check ⏰ Running)")
         ok, fail = await run_campaign(uid, s["camp_action"], s["camp_opts"])
         lines = [f"✅ **{fancy('COMPLETED')}** — {ok} success, {len(fail)} failed"]
         lines += [f"· {f}" for f in fail[:15]]
@@ -1790,7 +1662,7 @@ async def steps(e):
     # ── Campaign steps ──
     if step in ("camp_post", "camp_private_invite", "camp_count", "camp_emoji",
                 "camp_btn", "camp_target", "camp_dm_text", "sched_time",
-                "camp_poll_options", "camp_channel_target"):
+                "camp_poll_options", "camp_channel_target", "camp_timer"):
         if not is_admin(uid):
             reset(uid)
             return await e.reply(no_access())
@@ -1900,47 +1772,28 @@ async def steps(e):
 
         action = s["camp_action"]
 
-        if action in ("join", "join_request", "leave"):
-            if "target" not in s["camp_opts"]:
-                s["step"] = "camp_target"
-                return await e.reply(
-                    "📌 **Send channel target:**\n\nUsername: `@channel`\n"
-                    "Invite: `https://t.me/+invite_hash`\nID: `-1001234567890`", parse_mode="md")
-            return await ask_run(e, uid)
-
-        if action == "dm":
-            if "target" not in s["camp_opts"]:
-                s["step"] = "camp_target"
-                return await e.reply("📩 **Send username or user ID:**\n\n`@username` or `123456789`", parse_mode="md")
-            if "dm_text" not in s["camp_opts"]:
-                s["step"] = "camp_dm_text"
-                return await e.reply("✉️ **Send the DM message** you want to send:", parse_mode="md")
-            return await ask_run(e, uid)
-
-        # ── React actions → Specific / Random choice (2 buttons) ──
-        if action in ("react", "react_vote", "react_vote_view"):
-            s["step"] = None
+        # ── ⏱ TIMER STEP for spaced actions (react / vote / join_request etc.) ──
+        if action in TIMER_ACTIONS:
+            s["step"] = "camp_timer"
             return await e.reply(
-                f"😀 **{fancy('REACTION TYPE')}**",
-                buttons=[[styled_btn("🎯 Specific Emoji", b"react_specific", "primary")],
-                         [styled_btn("🎲 Random Emoji", b"react_random", "success")],
-                         [Button.inline("« Cancel", b"menu")]])
+                f"{PremiumEmojis.TIMER} **{fancy('SET TIMER')}**\n\n"
+                "Time gap **between each account**:\n"
+                "`10` → 10 seconds\n`1m` → 1 minute\n`2m` → 2 minutes\n`0` → No timer (instant)\n\n"
+                "💡 Example: `1m` with 50 accounts = 1 request every minute, "
+                "one-by-one. Recommended for Join Requests!",
+                buttons=[[Button.inline("⏱ No Timer (0)", b"timer_off")],
+                         [Button.inline("« Cancel", b"menu")]], parse_mode="md")
 
-        if action in ("vote", "unvote"):
-            if s["camp_opts"].get("btn_index") or s["camp_opts"].get("btn_text"):
-                return await ask_run(e, uid)
-            s["step"] = "camp_btn"
-            return await e.reply(
-                "🗳️ Send the button **number** or **text**:\n`1` / `Vote Now`\n\n"
-                "💡 (If buttons were shown above, just click one.)", parse_mode="md")
+        return await camp_next(e, uid)
 
-        if action == "poll_vote":
-            s["step"] = "camp_poll_options"
-            return await e.reply(
-                "📊 Send poll option numbers (comma separated):\n`0,1,2`\n(0 = first option)",
-                parse_mode="md")
-
-        return await ask_run(e, uid)
+    # ── ⏱ Timer input ──
+    if step == "camp_timer":
+        t = parse_timer(text)
+        if t is None:
+            return await e.reply("❌ Invalid timer. Use: `30` (30s), `1m`, `2m`, or `0` for none.",
+                                 parse_mode="md")
+        s["camp_opts"]["timer"] = t
+        return await camp_next(e, uid)
 
     if step == "camp_emoji":
         if not text.strip():
@@ -2010,6 +1863,60 @@ async def steps(e):
                              buttons=[[styled_btn("✅ Confirm", b"do_schedule", "success")],
                                       [Button.inline("❌ Cancel", b"menu")]])
 
+# ── Timer "No Timer" button ──
+@bot.on(events.CallbackQuery(pattern=b"^timer_off$"))
+async def cb_timer_off(e):
+    s = state(e.sender_id)
+    s.setdefault("camp_opts", {})["timer"] = 0
+    return await camp_next(e, e.sender_id)
+
+# ── Shared next-step logic after count + timer ──
+async def camp_next(e, uid):
+    s = state(uid)
+    action = s["camp_action"]
+
+    if action in ("join", "join_request", "leave"):
+        if "target" not in s["camp_opts"]:
+            s["step"] = "camp_target"
+            return await e.reply(
+                "📌 **Send channel target:**\n\nUsername: `@channel`\n"
+                "Invite: `https://t.me/+invite_hash`\nID: `-1001234567890`", parse_mode="md")
+        return await ask_run(e, uid)
+
+    if action == "dm":
+        if "target" not in s["camp_opts"]:
+            s["step"] = "camp_target"
+            return await e.reply("📩 **Send username or user ID:**\n\n`@username` or `123456789`", parse_mode="md")
+        if "dm_text" not in s["camp_opts"]:
+            s["step"] = "camp_dm_text"
+            return await e.reply("✉️ **Send the DM message** you want to send:", parse_mode="md")
+        return await ask_run(e, uid)
+
+    # ── React actions → Specific / Random choice (2 buttons) ──
+    if action in ("react", "react_vote", "react_vote_view"):
+        s["step"] = None
+        return await e.reply(
+            f"😀 **{fancy('REACTION TYPE')}**",
+            buttons=[[styled_btn("🎯 Specific Emoji", b"react_specific", "primary")],
+                     [styled_btn("🎲 Random Emoji", b"react_random", "success")],
+                     [Button.inline("« Cancel", b"menu")]])
+
+    if action in ("vote", "unvote"):
+        if s["camp_opts"].get("btn_index") or s["camp_opts"].get("btn_text"):
+            return await ask_run(e, uid)
+        s["step"] = "camp_btn"
+        return await e.reply(
+            "🗳️ Send the button **number** or **text**:\n`1` / `Vote Now`\n\n"
+            "💡 (If buttons were shown above, just click one.)", parse_mode="md")
+
+    if action == "poll_vote":
+        s["step"] = "camp_poll_options"
+        return await e.reply(
+            "📊 Send poll option numbers (comma separated):\n`0,1,2`\n(0 = first option)",
+            parse_mode="md")
+
+    return await ask_run(e, uid)
+
 async def ask_run(e, uid):
     s = state(uid)
     s["step"] = None
@@ -2028,6 +1935,10 @@ async def ask_run(e, uid):
             summary += f"Accounts: **All ({total_accs})**\n"
         else:
             summary += f"Accounts: **{min(count, total_accs)}**\n"
+    if "timer" in opts and opts["timer"] > 0:
+        est = opts["timer"] * max(0, (min(opts.get("count", 0) or 9999, 9999)) - 1)
+        summary += (f"{PremiumEmojis.TIMER} Timer: **{fmt_timer(opts['timer'])}** "
+                    f"between accounts\n")
     if "emoji" in opts:
         emoji_display = "🎲 Random" if opts['emoji'].lower() in ("random", "rand", "r", "🍀") else opts['emoji']
         summary += f"Emoji: {emoji_display}\n"
@@ -2071,45 +1982,38 @@ async def txt_upload(e):
     await steps(e)
 
 # ==========================================================
-#  FIX 4: Main - All accounts restore (remove 10 limit)
+#  MAIN — full auto-restore of ALL accounts
 # ==========================================================
 
 async def main():
     load_scheduled()
 
-    print("[VoteFlow] Preloading ALL accounts...")
-    
-    # ⭐ SABHI ACCOUNTS RESTORE - 10 ki limit hatao
-    total_accounts = len(accounts)
-    restored = 0
-    failed = 0
-    
-    for acc in accounts:
+    print(f"[VoteFlow] Restoring ALL {len(accounts)} accounts from {config.ACCOUNTS_FILE} ...")
+    restored, failed = 0, 0
+    for acc in accounts:                      # ⭐ SAB accounts restore — no limit
         try:
             c = await get_client(acc)
             if c:
                 restored += 1
-                print(f"[load] ✅ {acc.get('phone', 'unknown')} - restored")
+                print(f"[restore] ✅ {acc.get('phone', 'unknown')}")
             else:
                 failed += 1
-                print(f"[load] ❌ {acc.get('phone', 'unknown')} - failed")
+                print(f"[restore] ❌ {acc.get('phone', 'unknown')} — dead/expired")
         except Exception as ex:
             failed += 1
-            print(f"[load] ❌ {acc.get('phone', 'unknown')}: {ex}")
-        
-        # Thoda delay to avoid rate limit
-        await asyncio.sleep(0.5)
-    
-    print(f"[VoteFlow] Accounts restored: {restored}/{total_accounts} (Failed: {failed})")
+            print(f"[restore] ❌ {acc.get('phone', 'unknown')}: {str(ex)[:60]}")
+        await asyncio.sleep(0.3)              # avoid connect flood
+
+    print(f"[VoteFlow] Restored: {restored}/{len(accounts)} (failed: {failed})")
 
     asyncio.create_task(scheduler_loop(bot))
 
     print(f"[VoteFlow] Telethon version: {__import__('telethon').__version__}")
-
     print(f"[VoteFlow] Running. Accounts: {len(accounts)}, Admins: {len(admins)+1}, "
           f"Scheduled: {len(scheduled)}")
-    print(f"[VoteFlow] Button colors supported: {HAS_BTN_STYLE} "
-          f"(pip install -U Telethon to enable colors)")
+    print(f"[VoteFlow] Button colors supported: {HAS_BTN_STYLE}")
+    print(f"[VoteFlow] Loaded OWNER_IDS: {config.OWNER_IDS}")
+    print(f"[VoteFlow] Support bot: @{CREDIT_BOT} | Developer: @{DEVELOPER}")
     print(f"[VoteFlow] Admin Limits active: {sum(1 for a in admins if a.get('limit', 0) > 0)}")
 
     await bot.run_until_disconnected()
