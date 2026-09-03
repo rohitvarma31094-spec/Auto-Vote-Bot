@@ -56,23 +56,72 @@ LOCK = threading.Lock()
 CREDIT_BOT = "Aetherhu_bot"
 DEVELOPER  = "Yuvan_27k"
 
-# Actions jinke beech TIMER chalega
+# Actions with TIMER support
 TIMER_ACTIONS = ("react", "react_vote", "react_vote_view", "vote",
                  "unvote", "poll_vote", "join", "join_request")
 
 # ==========================================================
-#  STYLISH FONTS
+#  AESTHETIC TEXT HELPERS
 # ==========================================================
 
-_BOLD = str.maketrans(
+# Monospace bold style
+MONO_BOLD = str.maketrans(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    "𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣"
+    "𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉"
+    "𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿"
+)
+
+# Bold serif style
+BOLD_SERIF = str.maketrans(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
     "𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇"
     "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭"
     "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
 )
 
-def fancy(t: str) -> str:
-    return str(t).translate(_BOLD)
+# Double-struck style
+DOUBLE_STRUCK = str.maketrans(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    "𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫"
+    "𝔸𝔹ℂ𝔻𝔼𝔽𝔾ℍ𝕀𝕁𝕂𝕃𝕄ℕ𝕆ℙℚℝ𝕊𝕋𝕌𝕍𝕎𝕏𝕐ℤ"
+    "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡"
+)
+
+# Script style
+SCRIPT = str.maketrans(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏"
+    "𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵"
+)
+
+def fancy_text(t: str, style: str = "bold") -> str:
+    """Apply aesthetic font styling to text"""
+    if style == "bold":
+        return str(t).translate(BOLD_SERIF)
+    elif style == "mono":
+        return str(t).translate(MONO_BOLD)
+    elif style == "double":
+        return str(t).translate(DOUBLE_STRUCK)
+    elif style == "script":
+        return str(t).translate(SCRIPT)
+    return str(t)
+
+def fancy_bold(t: str) -> str:
+    return str(t).translate(BOLD_SERIF)
+
+def fancy_mono(t: str) -> str:
+    return str(t).translate(MONO_BOLD)
+
+def fancy_double(t: str) -> str:
+    return str(t).translate(DOUBLE_STRUCK)
+
+def fancy_script(t: str) -> str:
+    return str(t).translate(SCRIPT)
+
+# Brand name in double-struck style
+BRAND = fancy_double("VOTEFLOW")
+BRAND_BOLD = fancy_bold("VOTEFLOW")
 
 async def send(e, text, **kw):
     f = getattr(e, "reply", None)
@@ -97,38 +146,58 @@ def styled_btn(text, data, style=None):
     return Button.inline(text, data)
 
 # ==========================================================
-#  PREMIUM EMOJIS - 100% COMPLETE
+#  EMOJIS - UNICODE
 # ==========================================================
 
-class PremiumEmojis:
-    # 🎯 BUTTON ICONS - ALL PREMIUM
-    VOTE = "🎯"              # 6240085923397114865
-    JOIN = "✨"              # 6240003971126139705
-    CANCEL = "🚫"           # 6082294352564983391
-    MAIN_MENU = "🌟"        # 6086784551894389168
-    BACK = "⬅️"             # 5271962619425599462
-    CREATE = "🚀"           # 5188481279963715781
-    CONNECT = "⛓️"          # 6237622209897044583
-    MANAGE = "💀"           # 6082160779082077008
-    ADMIN = "👑"            # 6332246180583447893
-    STATS = "📊"            # 5177256464539976338
-    SETTINGS = "⚙️"        # 5388725162247992600
-    CLEAR = "🧹"            # 5278491193053822590
-    CHANNEL = "📡"          # 6095891759462617671
-    CONFIRM = "✅"          # 6082554958295602218
-    CHART = "📈"            # 5282950412784117735
-    CROWN = "👑"            # 6332246180583447893
-    ALERT = "⚠️"            # 6237622209897044583
-    SEARCH = "👁️"           # 6237774947524025498
-    SPEAKER = "📢"          # 6095891759462617671
-    LOCK = "🔒"             # 5429405838345265327
-    ID = "🤔"               # 6327736971728788025
-    STAR = "⭐"             # 6239815031219820750
-    REQUEST = "💌"          # 5285184156555306745
-    CLOCK = "⏰"            # 5787488119490088755
-    TIMER = "⏱️"           # 5299010592583988002
+class Emojis:
+    # 🎯 Navigation
+    VOTE = "🎯"
+    JOIN = "✨"
+    CANCEL = "🚫"
+    MAIN_MENU = "🌟"
+    BACK = "⬅️"
+    CREATE = "🚀"
+    CONNECT = "⛓️"
+    MANAGE = "💀"
+    ADMIN = "👑"
+    STATS = "📊"
+    SETTINGS = "⚙️"
+    CLEAR = "🧹"
+    CHANNEL = "📡"
+    CONFIRM = "✅"
+    CHART = "📈"
+    CROWN = "👑"
+    ALERT = "⚠️"
+    SEARCH = "👁️"
+    SPEAKER = "📢"
+    LOCK = "🔒"
+    ID = "🤔"
+    STAR = "⭐"
+    REQUEST = "💌"
+    CLOCK = "⏰"
+    TIMER = "⏱️"
+    FIRE = "🔥"
+    DIAMOND = "💎"
+    PARTY = "🎉"
+    THUMBS = "👍"
+    HEART = "❤️"
+    COOL = "😎"
+    ICE = "🧊"
+    FLAG = "🚩"
+    ANGEL = "👼"
+    TEDDY = "🧸"
+    BABY = "👶"
+    HOME = "🏠"
+    ENVELOPE = "📩"
+    MAGNIFY = "🔍"
+    SMILE = "☺️"
+    ROCKET = "🚀"
+    HANDS = "🙌"
+    CLAP = "👏"
+    CROWN2 = "👑"
+    GEM = "💎"
 
-    # ⭐ REACTION EMOJIS
+    # Reaction emojis mapping (for premium)
     REACTION_EMOJIS = {
         "❤️‍🔥": "6082544779223110894",
         "🌟": "6086784551894389168",
@@ -536,7 +605,7 @@ async def do_react(c, ent, msg_id, emoji):
         except Exception as ex:
             return False, f"{type(ex).__name__}: {str(ex)[:60]}"
 
-    doc_id = PremiumEmojis.REACTION_EMOJIS.get(emoji)
+    doc_id = Emojis.REACTION_EMOJIS.get(emoji)
     if doc_id:
         ok, err = await attempt(ReactionCustomEmoji(document_id=int(doc_id)))
         if ok:
@@ -980,7 +1049,7 @@ async def scheduler_loop(bot):
             save_scheduled()
             try:
                 ok, fail = await run_campaign(s["owner"], s["action"], s["opts"])
-                txt = (f"⏰ {fancy('SCHEDULED CAMPAIGN COMPLETED')}\n"
+                txt = (f"⏰ {fancy_bold('SCHEDULED CAMPAIGN COMPLETED')}\n"
                        f"Action: `{s['action']}`\n✅ Success: {ok}\n❌ Failed: {len(fail)}")
                 if fail:
                     txt += "\n" + "\n".join(f"· {f}" for f in fail[:10])
@@ -990,7 +1059,7 @@ async def scheduler_loop(bot):
         await asyncio.sleep(5)
 
 # ==========================================================
-#  BOT SETUP - FULLY PREMIUM
+#  BOT SETUP
 # ==========================================================
 
 bot = TelegramClient(
@@ -998,41 +1067,41 @@ bot = TelegramClient(
     config.API_ID, config.API_HASH
 ).start(bot_token=config.BOT_TOKEN)
 
-# ── ACTIONS WITH PREMIUM ICONS ──
+# ── ACTIONS WITH EMOJIS ──
 ACTIONS = [
-    ("react", f"{PremiumEmojis.STAR} React"),
-    ("unreact", f"{PremiumEmojis.CLEAR} Remove Reaction"),
-    ("vote", f"{PremiumEmojis.VOTE} Vote"),
-    ("unvote", f"{PremiumEmojis.CANCEL} Remove Vote"),
-    ("poll_vote", f"{PremiumEmojis.CHART} Poll Vote"),
-    ("unvote_poll", f"{PremiumEmojis.CANCEL} Remove Poll Vote"),
-    ("react_vote", f"{PremiumEmojis.STAR} React + Vote"),
-    ("view", f"{PremiumEmojis.SEARCH} View"),
-    ("react_vote_view", f"{PremiumEmojis.STAR} React + Vote + View"),
-    ("join", f"{PremiumEmojis.JOIN} Join Channel"),
-    ("join_request", f"{PremiumEmojis.REQUEST} Join Request"),
-    ("leave", f"{PremiumEmojis.CANCEL} Leave Channel"),
-    ("dm", f"{PremiumEmojis.SPEAKER} DM"),
+    ("react", f"{Emojis.STAR} React"),
+    ("unreact", f"{Emojis.CLEAR} Remove Reaction"),
+    ("vote", f"{Emojis.VOTE} Vote"),
+    ("unvote", f"{Emojis.CANCEL} Remove Vote"),
+    ("poll_vote", f"{Emojis.CHART} Poll Vote"),
+    ("unvote_poll", f"{Emojis.CANCEL} Remove Poll Vote"),
+    ("react_vote", f"{Emojis.STAR} React + Vote"),
+    ("view", f"{Emojis.SEARCH} View"),
+    ("react_vote_view", f"{Emojis.STAR} React + Vote + View"),
+    ("join", f"{Emojis.JOIN} Join Channel"),
+    ("join_request", f"{Emojis.REQUEST} Join Request"),
+    ("leave", f"{Emojis.CANCEL} Leave Channel"),
+    ("dm", f"{Emojis.SPEAKER} DM"),
 ]
 
-# ── MAIN MENU - FULLY PREMIUM ──
+# ── MAIN MENU ──
 MAIN_MENU = [
-    [styled_btn(f"{PremiumEmojis.ID} My Account", b"myacc", "primary"),
-     styled_btn(f"{PremiumEmojis.JOIN} Add Account", b"add", "success")],
-    [styled_btn(f"{PremiumEmojis.CREATE} New Campaign", b"camp", "primary"),
-     styled_btn(f"{PremiumEmojis.CHART} My Campaigns", b"mycamp", "success")],
-    [styled_btn(f"{PremiumEmojis.CLOCK} Running", b"running", "primary"),
-     styled_btn(f"{PremiumEmojis.STATS} My Status", b"mystat", "success")],
-    [styled_btn(f"{PremiumEmojis.SETTINGS} Settings", b"set", "primary"),
-     styled_btn(f"{PremiumEmojis.ADMIN} Owner Panel", b"owner_panel", "danger")],
-    [styled_btn(f"{PremiumEmojis.CANCEL} Leave Channel", b"leave_menu", "danger"),
-     styled_btn(f"{PremiumEmojis.SEARCH} Help", b"help", "primary")],
-    [styled_btn(f"{PremiumEmojis.CLEAR} Remove Account", b"remove_acc", "danger")],
-    [Button.url(f"{PremiumEmojis.CONNECT} Support", f"https://t.me/{CREDIT_BOT}"),
-     Button.url(f"{PremiumEmojis.CROWN} Developer", f"https://t.me/{DEVELOPER}")],
+    [styled_btn(f"{Emojis.ID} My Account", b"myacc", "primary"),
+     styled_btn(f"{Emojis.JOIN} Add Account", b"add", "success")],
+    [styled_btn(f"{Emojis.CREATE} New Campaign", b"camp", "primary"),
+     styled_btn(f"{Emojis.CHART} My Campaigns", b"mycamp", "success")],
+    [styled_btn(f"{Emojis.CLOCK} Running", b"running", "primary"),
+     styled_btn(f"{Emojis.STATS} My Status", b"mystat", "success")],
+    [styled_btn(f"{Emojis.SETTINGS} Settings", b"set", "primary"),
+     styled_btn(f"{Emojis.ADMIN} Owner Panel", b"owner_panel", "danger")],
+    [styled_btn(f"{Emojis.CANCEL} Leave Channel", b"leave_menu", "danger"),
+     styled_btn(f"{Emojis.SEARCH} Help", b"help", "primary")],
+    [styled_btn(f"{Emojis.CLEAR} Remove Account", b"remove_acc", "danger")],
+    [Button.url(f"{Emojis.CONNECT} Support", f"https://t.me/{CREDIT_BOT}"),
+     Button.url(f"{Emojis.CROWN} Developer", f"https://t.me/{DEVELOPER}")],
 ]
 
-# ── MENU TEXT - AESTHETIC ──
+# ── MENU TEXT ──
 def menu_text(uid):
     my = len(my_accounts(uid))
     limit = get_user_limit(uid)
@@ -1044,9 +1113,9 @@ def menu_text(uid):
     access_text = "Owner" if is_owner(uid) else ("Admin" if is_admin(uid) else "User")
 
     text = (
-        f"🌟 **{fancy('『 VOTEFLOW BOT 』')}** 🌟\n\n"
+        f"🌟 **{fancy_bold('『 VOTEFLOW BOT 』')}** 🌟\n\n"
         f"┌───────────────────────────────────────┐\n"
-        f"│ {PremiumEmojis.STATS} **{fancy('Your Statistics')}**\n"
+        f"│ {Emojis.STATS} **{fancy_bold('Your Statistics')}**\n"
         f"│  ───────────────────────────────────\n"
         f"│  📱 Accounts: **{my}**\n"
         f"│  📊 Limit: **{limit_text}**\n"
@@ -1056,15 +1125,15 @@ def menu_text(uid):
         text += f"│  🌐 Total Bot Accounts: **{get_total_accounts()}**\n"
 
     text += (
-        f"│  {PremiumEmojis.LOCK} Access: **{access_emoji} {access_text}**\n"
+        f"│  {Emojis.LOCK} Access: **{access_emoji} {access_text}**\n"
         f"└───────────────────────────────────────┘\n\n"
-        f"✨ **{fancy('Auto Vote • React • Members • DM')}**\n"
+        f"✨ **{fancy_bold('Auto Vote • React • Members • DM')}**\n"
         f"👑 **Developed by** @{DEVELOPER}\n"
     )
 
     if is_owner(uid):
         text += (
-            f"\n{PremiumEmojis.CHART} **{fancy('Global Stats')}:**\n"
+            f"\n{Emojis.CHART} **{fancy_bold('Global Stats')}:**\n"
             f"┌───────────────────────────────────────┐\n"
             f"│  📊 Total Accounts: **{get_total_accounts()}**\n"
             f"│  ⏳ Running: **{len(get_running_campaigns())}**\n"
@@ -1075,7 +1144,7 @@ def menu_text(uid):
     return text
 
 def no_access():
-    return f"{PremiumEmojis.ALERT} **{fancy('ACCESS DENIED')}**\nOnly Owner/Admins can run campaigns."
+    return f"{Emojis.ALERT} **{fancy_bold('ACCESS DENIED')}**\nOnly Owner/Admins can run campaigns."
 
 # ==========================================================
 #  COMMANDS
@@ -1095,10 +1164,10 @@ async def cmd_me(e):
     access_text = "Owner" if is_owner(uid) else ("Admin" if is_admin(uid) else "User")
 
     await e.reply(
-        f"{PremiumEmojis.ID} **{fancy('My Profile')}**\n"
+        f"{Emojis.ID} **{fancy_bold('My Profile')}**\n"
         f"┌───────────────────────────────────────┐\n"
         f"│  🆔 ID: `{uid}`\n"
-        f"│  {PremiumEmojis.LOCK} Access: **{access_emoji} {access_text}**\n"
+        f"│  {Emojis.LOCK} Access: **{access_emoji} {access_text}**\n"
         f"│  📱 Accounts: **{total_accs}**\n"
         f"│  📊 Limit: **{get_user_limit(uid)}**\n"
         f"└───────────────────────────────────────┘\n\n"
@@ -1109,15 +1178,15 @@ async def cmd_me(e):
 @bot.on(events.NewMessage(pattern="^/list$"))
 async def cmd_list(e):
     if not is_owner(e.sender_id):
-        return await e.reply(f"{PremiumEmojis.ALERT} ⛔ Owner Only!", parse_mode="md")
+        return await e.reply(f"{Emojis.ALERT} ⛔ Owner Only!", parse_mode="md")
     if not accounts:
-        return await e.reply(f"{PremiumEmojis.CANCEL} No accounts added yet.", parse_mode="md")
+        return await e.reply(f"{Emojis.CANCEL} No accounts added yet.", parse_mode="md")
 
     owners = {}
     for a in accounts:
         owners.setdefault(a.get("owner"), []).append(a)
 
-    lines = [f"👥 **{fancy('Users List')}** — Total Users: **{len(owners)}**\n"]
+    lines = [f"👥 **{fancy_bold('Users List')}** — Total Users: **{len(owners)}**\n"]
     lines.append("┌───────────────────────────────────────┐")
     for o, accs in sorted(owners.items(), key=lambda x: -len(x[1])):
         admin_tag = " 👑" if o in config.OWNER_IDS else (" ⚡" if o in [a['id'] for a in admins] else "")
@@ -1133,16 +1202,16 @@ async def cmd_check(e):
 
     if target and int(target) != uid:
         if not is_owner(uid):
-            return await e.reply(f"{PremiumEmojis.ALERT} Only the **Owner** can view another user's report.", parse_mode="md")
+            return await e.reply(f"{Emojis.ALERT} Only the **Owner** can view another user's report.", parse_mode="md")
         check_id = int(target)
         accs = [a for a in accounts if a.get("owner") == check_id]
         if not accs:
-            return await e.reply(f"{PremiumEmojis.CANCEL} No accounts found for user `{check_id}`.", parse_mode="md")
+            return await e.reply(f"{Emojis.CANCEL} No accounts found for user `{check_id}`.", parse_mode="md")
     else:
         check_id = uid
         accs = get_admin_accounts(uid) if is_admin(uid) else [a for a in accounts if a.get("owner") == uid]
 
-    await e.reply(f"{PremiumEmojis.SEARCH} **{fancy('Checking Accounts...')}**\nTotal: {len(accs)} (this may take a moment)", parse_mode="md")
+    await e.reply(f"{Emojis.SEARCH} **{fancy_bold('Checking Accounts...')}**\nTotal: {len(accs)} (this may take a moment)", parse_mode="md")
 
     total = len(accs)
     active, expired = 0, []
@@ -1158,7 +1227,7 @@ async def cmd_check(e):
             expired.append(acc)
 
     lines = [
-        f"📋 **{fancy('Account Report')}**",
+        f"📋 **{fancy_bold('Account Report')}**",
         f"┌───────────────────────────────────────┐",
         f"│  🆔 User ID: `{check_id}`",
         f"│  📱 Total Added: **{total}**",
@@ -1194,7 +1263,7 @@ async def check_status(uid):
 @bot.on(events.NewMessage(pattern="^/addadmin(@\w+)?(\s+.*)?$"))
 async def cmd_addadmin(e):
     if not is_owner(e.sender_id):
-        return await e.reply(f"{PremiumEmojis.ALERT} ⛔ Owner Only!", parse_mode="md")
+        return await e.reply(f"{Emojis.ALERT} ⛔ Owner Only!", parse_mode="md")
 
     target_id, limit = None, 0
     if e.reply_to_msg_id:
@@ -1217,13 +1286,13 @@ async def cmd_addadmin(e):
     if admin_exists:
         admin_exists['limit'] = limit
         save_admins()
-        return await e.reply(f"{PremiumEmojis.CONFIRM} Admin limit updated for `{target_id}`: **{limit_text}** accounts", parse_mode="md")
+        return await e.reply(f"{Emojis.CONFIRM} Admin limit updated for `{target_id}`: **{limit_text}** accounts", parse_mode="md")
 
     admins.append({"id": target_id, "limit": limit})
     save_admins()
-    await e.reply(f"{PremiumEmojis.CONFIRM} **`{target_id}` is now Admin!** (Limit: **{limit_text}** accounts)", parse_mode="md")
+    await e.reply(f"{Emojis.CONFIRM} **`{target_id}` is now Admin!** (Limit: **{limit_text}** accounts)", parse_mode="md")
     try:
-        await bot.send_message(target_id, f"{PremiumEmojis.CROWN} You got **Admin access**! Limit: **{limit_text}** accounts")
+        await bot.send_message(target_id, f"{Emojis.CROWN} You got **Admin access**! Limit: **{limit_text}** accounts")
     except Exception:
         pass
 
@@ -1231,7 +1300,7 @@ async def cmd_addadmin(e):
 async def cmd_rmadmin(e):
     global admins
     if not is_owner(e.sender_id):
-        return await e.reply(f"{PremiumEmojis.ALERT} ⛔ Owner Only!", parse_mode="md")
+        return await e.reply(f"{Emojis.ALERT} ⛔ Owner Only!", parse_mode="md")
 
     target_id = None
     if e.reply_to_msg_id:
@@ -1245,16 +1314,16 @@ async def cmd_rmadmin(e):
 
     admins = [a for a in admins if a.get('id') != target_id]
     save_admins()
-    await e.reply(f"{PremiumEmojis.CLEAR} Admin revoked for `{target_id}`.", parse_mode="md")
+    await e.reply(f"{Emojis.CLEAR} Admin revoked for `{target_id}`.", parse_mode="md")
 
 @bot.on(events.NewMessage(pattern="^/adminlist$"))
 async def cmd_adminlist(e):
     if not is_owner(e.sender_id):
-        return await e.reply(f"{PremiumEmojis.ALERT} ⛔ Owner Only!", parse_mode="md")
+        return await e.reply(f"{Emojis.ALERT} ⛔ Owner Only!", parse_mode="md")
     if not admins:
-        return await e.reply(f"{PremiumEmojis.CANCEL} No admins. Use: `/addadmin <id> <limit>`", parse_mode="md")
+        return await e.reply(f"{Emojis.CANCEL} No admins. Use: `/addadmin <id> <limit>`", parse_mode="md")
 
-    lines = [f"👮 **{fancy('Admins List')}**"]
+    lines = [f"👮 **{fancy_bold('Admins List')}**"]
     lines.append("┌───────────────────────────────────────┐")
     for a in admins:
         try:
@@ -1271,20 +1340,20 @@ async def cmd_adminlist(e):
 @bot.on(events.NewMessage(pattern="^/stop(\s+.*)?$"))
 async def cmd_stop(e):
     if not is_admin(e.sender_id):
-        return await e.reply(f"{PremiumEmojis.ALERT} ⛔ Admin Only!", parse_mode="md")
+        return await e.reply(f"{Emojis.ALERT} ⛔ Admin Only!", parse_mode="md")
 
     campaign_id = e.pattern_match.group(1)
     if campaign_id:
         campaign_id = campaign_id.strip()
         if stop_campaign(campaign_id):
-            await e.reply(f"{PremiumEmojis.CONFIRM} Campaign `{campaign_id}` stopped successfully!", parse_mode="md")
+            await e.reply(f"{Emojis.CONFIRM} Campaign `{campaign_id}` stopped successfully!", parse_mode="md")
         else:
-            await e.reply(f"{PremiumEmojis.CANCEL} Campaign `{campaign_id}` not found or already completed.", parse_mode="md")
+            await e.reply(f"{Emojis.CANCEL} Campaign `{campaign_id}` not found or already completed.", parse_mode="md")
     else:
         running = get_running_campaigns()
         if not running:
-            return await e.reply(f"{PremiumEmojis.CANCEL} No running campaigns.", parse_mode="md")
-        lines = [f"{PremiumEmojis.TIMER} **{fancy('Running Campaigns')}:**"]
+            return await e.reply(f"{Emojis.CANCEL} No running campaigns.", parse_mode="md")
+        lines = [f"{Emojis.TIMER} **{fancy_bold('Running Campaigns')}:**"]
         lines.append("┌───────────────────────────────────────┐")
         for c in running:
             progress = f"{c['processed']}/{c['total']}" if c['total'] > 0 else "Processing"
@@ -1315,14 +1384,14 @@ async def cb(e):
             s.setdefault("camp_opts", {})
             s["camp_opts"]["btn_index"] = idx
             s["camp_opts"]["btn_text"] = btns[idx - 1].text
-            return await e.answer(f"{PremiumEmojis.CONFIRM} Button {idx} selected: {(btns[idx-1].text or '?')[:30]}")
+            return await e.answer(f"{Emojis.CONFIRM} Button {idx} selected: {(btns[idx-1].text or '?')[:30]}")
         return await e.answer("Invalid button", alert=True)
 
     if data == "react_specific":
         s = state(uid)
         s["step"] = "camp_emoji"
         return await e.edit(
-            f"{PremiumEmojis.STAR} **Send the emoji** you want:\n\n"
+            f"{Emojis.STAR} **Send the emoji** you want:\n\n"
             "`👍` `❤️` `🔥` `🎉` `💎` `👑` `😍` `🚀` `☺️` `⭐` `🎀` `😎` `🧊` `🚩`\n"
             "or type any emoji.\n\n"
             "💡 Premium custom emoji versions are used automatically "
@@ -1338,7 +1407,7 @@ async def cb(e):
         running = get_running_campaigns()
         if not running:
             return await e.edit("No running campaigns.", buttons=[[Button.inline("« Back", b"menu")]])
-        lines = [f"{PremiumEmojis.TIMER} **{fancy('Running Campaigns')}:**"]
+        lines = [f"{Emojis.TIMER} **{fancy_bold('Running Campaigns')}:**"]
         lines.append("┌───────────────────────────────────────┐")
         for c in running:
             progress = f"{c['processed']}/{c['total']}" if c['total'] > 0 else "Processing"
@@ -1348,8 +1417,8 @@ async def cb(e):
 
     if data == "owner_panel":
         if not is_owner(uid):
-            return await e.answer(f"{PremiumEmojis.ALERT} ⛔ Owner Only!", alert=True)
-        lines = [f"{PremiumEmojis.CROWN} **{fancy('OWNER PANEL')}**\n"
+            return await e.answer(f"{Emojis.ALERT} ⛔ Owner Only!", alert=True)
+        lines = [f"{Emojis.CROWN} **{fancy_bold('OWNER PANEL')}**\n"
                  f"┌───────────────────────────────────────┐\n"
                  f"│  📊 Global Accounts: **{len(accounts)}**\n"
                  f"│  👥 Users: **{len(set(a.get('owner') for a in accounts))}**\n"
@@ -1379,10 +1448,10 @@ async def cb(e):
                         active += 1
                     except Exception:
                         expired.append(acc)
-            lines = [f"🧑‍💼 **{fancy('MY PROFILE')}**\n"
+            lines = [f"🧑‍💼 **{fancy_bold('MY PROFILE')}**\n"
                      f"┌───────────────────────────────────────┐\n"
                      f"│  🆔 ID: `{uid}`\n"
-                     f"│  {PremiumEmojis.LOCK} Access: **{'👑 Owner' if is_owner(uid) else '✅ Admin'}**\n"
+                     f"│  {Emojis.LOCK} Access: **{'👑 Owner' if is_owner(uid) else '✅ Admin'}**\n"
                      f"│  📊 Accessible: {len(accs)} | Active: {active} | Expired: {len(expired)}\n"
                      f"└───────────────────────────────────────┘"]
             if accs:
@@ -1392,10 +1461,10 @@ async def cb(e):
                     lines.append(f"{mark} `{a['phone']}` — {a.get('name','?')}")
         else:
             total, active, expired, user_accs = await check_status(uid)
-            lines = [f"🧑‍💼 **{fancy('MY PROFILE')}**\n"
+            lines = [f"🧑‍💼 **{fancy_bold('MY PROFILE')}**\n"
                      f"┌───────────────────────────────────────┐\n"
                      f"│  🆔 ID: `{uid}`\n"
-                     f"│  {PremiumEmojis.LOCK} Access: **👤 User**\n"
+                     f"│  {Emojis.LOCK} Access: **👤 User**\n"
                      f"│  📊 Accounts: {total} | Active: {active} | Expired: {len(expired)}\n"
                      f"└───────────────────────────────────────┘"]
         return await e.edit("\n".join(lines), parse_mode="md",
@@ -1403,7 +1472,7 @@ async def cb(e):
 
     if data == "mystat":
         myc = [c for c in campaigns if c["owner"] == uid]
-        lines = [f"{PremiumEmojis.STATS} **{fancy('MY STATUS')}**"]
+        lines = [f"{Emojis.STATS} **{fancy_bold('MY STATUS')}**"]
         lines.append("┌───────────────────────────────────────┐")
         if is_admin(uid):
             lines.append(f"│  Accessible Accounts: {len(get_admin_accounts(uid))}")
@@ -1432,28 +1501,28 @@ async def cb(e):
 
     if data == "help":
         return await e.edit(
-            f"❓ **{fancy('HELP — VOTEFLOW BOT')}**\n\n"
-            f"🌟 **{fancy('Quick Start Guide')}**\n"
+            f"❓ **{fancy_bold('HELP — VOTEFLOW BOT')}**\n\n"
+            f"🌟 **{fancy_bold('Quick Start Guide')}**\n"
             f"┌───────────────────────────────────────┐\n"
-            f"│ 1️⃣ {PremiumEmojis.JOIN} Add Accounts (Phone/OTP/Session/Bulk)\n"
-            f"│ 2️⃣ {PremiumEmojis.CREATE} New Campaign → Select Action\n"
-            f"│ 3️⃣ {PremiumEmojis.SEARCH} Bot shows post & buttons → Click to select\n"
-            f"│ 4️⃣ {PremiumEmojis.TIMER} Set Timer → Run!\n"
+            f"│ 1️⃣ {Emojis.JOIN} Add Accounts (Phone/OTP/Session/Bulk)\n"
+            f"│ 2️⃣ {Emojis.CREATE} New Campaign → Select Action\n"
+            f"│ 3️⃣ {Emojis.SEARCH} Bot shows post & buttons → Click to select\n"
+            f"│ 4️⃣ {Emojis.TIMER} Set Timer → Run!\n"
             f"└───────────────────────────────────────┘\n\n"
-            f"⏱️ **{fancy('Timer Feature')}**\n"
+            f"⏱️ **{fancy_bold('Timer Feature')}**\n"
             f"• Set spacing between accounts: `30s` / `1m` / `2m`\n"
             f"• Perfect for Join Requests, Votes & Reacts\n"
             f"• `0` = Instant (no timer)\n\n"
-            f"🎯 **{fancy('Reactions')}**\n"
+            f"🎯 **{fancy_bold('Reactions')}**\n"
             f"• Choose 🎯 Specific or 🎲 Random emoji\n"
             f"• Premium emojis auto-used for Premium accounts\n\n"
-            f"🗳️ **{fancy('Voting')}**\n"
+            f"🗳️ **{fancy_bold('Voting')}**\n"
             f"• Bot shows real inline buttons\n"
             f"• Click to select the button you want\n\n"
-            f"🔐 **{fancy('Private Channels')}**\n"
+            f"🔐 **{fancy_bold('Private Channels')}**\n"
             f"• Send post link → Bot asks for invite link\n"
             f"• Accounts JOIN first, then React/Vote\n\n"
-            f"🔧 **{fancy('Commands')}**\n"
+            f"🔧 **{fancy_bold('Commands')}**\n"
             f"┌───────────────────────────────────────┐\n"
             f"│ /start  - Main Menu\n"
             f"│ /me     - My Profile\n"
@@ -1464,20 +1533,20 @@ async def cb(e):
             f"│ /rmadmin  - Remove Admin (Owner)\n"
             f"│ /adminlist - List Admins (Owner)\n"
             f"└───────────────────────────────────────┘\n\n"
-            f"💡 **{fancy('Tips')}**\n"
+            f"💡 **{fancy_bold('Tips')}**\n"
             f"• Count `0` = All accounts\n"
             f"• Set delay `1-3` in Settings\n"
             f"• Premium accounts get premium reactions!\n\n"
             f"👑 **Developed by** @{DEVELOPER}",
             parse_mode="md",
-            buttons=[[Button.url(f"{PremiumEmojis.CONNECT} Support", f"https://t.me/{CREDIT_BOT}"),
+            buttons=[[Button.url(f"{Emojis.CONNECT} Support", f"https://t.me/{CREDIT_BOT}"),
                       Button.inline("« Back", b"menu")]]
         )
 
     # ── Add Account ──
     if data == "add":
         s.clear()
-        return await e.edit(f"{PremiumEmojis.CONNECT} **{fancy('ADD ACCOUNT')}**",
+        return await e.edit(f"{Emojis.CONNECT} **{fancy_bold('ADD ACCOUNT')}**",
                             buttons=[[styled_btn("📱 Phone + OTP", b"add_phone", "primary")],
                                      [styled_btn("🔑 Session String", b"add_string", "primary")],
                                      [styled_btn("📋 Bulk Sessions", b"bulk", "primary")],
@@ -1504,13 +1573,13 @@ async def cb(e):
     if data == "remove_acc":
         s.clear()
         s["step"] = "remove_input"
-        return await e.edit(f"{PremiumEmojis.CLEAR} **{fancy('REMOVE ACCOUNT')}**\nSend phone number:\n`+919876543210`\n\n⚠️ Permanent!",
+        return await e.edit(f"{Emojis.CLEAR} **{fancy_bold('REMOVE ACCOUNT')}**\nSend phone number:\n`+919876543210`\n\n⚠️ Permanent!",
                             buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
 
     if data == "set":
         st = get_settings(uid)
         s["step"] = "set"
-        return await e.edit(f"{PremiumEmojis.SETTINGS} **{fancy('SETTINGS')}**\nDelay: `{st['delay_min']}`–`{st['delay_max']}` sec\n\nSet new: `min-max` (e.g. `1-3`)",
+        return await e.edit(f"{Emojis.SETTINGS} **{fancy_bold('SETTINGS')}**\nDelay: `{st['delay_min']}`–`{st['delay_max']}` sec\n\nSet new: `min-max` (e.g. `1-3`)",
                             buttons=[[Button.inline("« Back", b"menu")]], parse_mode="md")
 
     # ── Leave Menu ──
@@ -1568,7 +1637,7 @@ async def cb(e):
         for i, (key, label) in enumerate(ACTIONS):
             btns.append([styled_btn(label, f"act:{key}".encode(), style_cycle[i % 2])])
         btns.append([Button.inline("« Back", b"menu")])
-        return await e.edit(f"🚀 **{fancy('NEW CAMPAIGN')}**\nSelect action:", buttons=btns, parse_mode="md")
+        return await e.edit(f"🚀 **{fancy_bold('NEW CAMPAIGN')}**\nSelect action:", buttons=btns, parse_mode="md")
 
     if data.startswith("act:"):
         if not is_admin(uid):
@@ -1581,16 +1650,16 @@ async def cb(e):
         if key in ("join", "join_request", "leave", "dm"):
             s["step"] = "camp_target"
             hints = {
-                "join": f"{PremiumEmojis.JOIN} **Join Channel / Group**\n\nSend channel link or username:\n`@channel`\n`https://t.me/channel`\n`https://t.me/+invite_hash`",
-                "join_request": f"{PremiumEmojis.REQUEST} **Join Request**\n\nSend channel invite link:\n`https://t.me/+invite_hash`\n\n⏱️ A spacing timer will be asked after the count — accounts send requests one-by-one.",
-                "leave": f"{PremiumEmojis.CANCEL} **Leave**\nSend channel link or username",
-                "dm": f"{PremiumEmojis.SPEAKER} **DM**\nSend username or user id",
+                "join": f"{Emojis.JOIN} **Join Channel / Group**\n\nSend channel link or username:\n`@channel`\n`https://t.me/channel`\n`https://t.me/+invite_hash`",
+                "join_request": f"{Emojis.REQUEST} **Join Request**\n\nSend channel invite link:\n`https://t.me/+invite_hash`\n\n⏱️ A spacing timer will be asked after the count — accounts send requests one-by-one.",
+                "leave": f"{Emojis.CANCEL} **Leave**\nSend channel link or username",
+                "dm": f"{Emojis.SPEAKER} **DM**\nSend username or user id",
             }
             return await e.edit(hints[key], buttons=[[Button.inline("« Cancel", b"menu")]], parse_mode="md")
 
         s["step"] = "camp_post"
         return await e.edit(
-            f"{PremiumEmojis.CHANNEL} **{fancy('POST LINK')}**\n\n"
+            f"{Emojis.CHANNEL} **{fancy_bold('POST LINK')}**\n\n"
             "Send the post URL:\n"
             "`https://t.me/channel/123` (public)\n"
             "`https://t.me/c/1234567890/123` (private)\n\n"
@@ -1606,7 +1675,7 @@ async def cb(e):
         s = state(uid)
         await e.edit("⏳ Running campaign... (timer campaigns may take a while — check ⏰ Running)")
         ok, fail = await run_campaign(uid, s["camp_action"], s["camp_opts"])
-        lines = [f"✅ **{fancy('COMPLETED')}** — {ok} success, {len(fail)} failed"]
+        lines = [f"✅ **{fancy_bold('COMPLETED')}** — {ok} success, {len(fail)} failed"]
         lines += [f"· {f}" for f in fail[:15]]
         reset(uid)
         return await e.edit("\n".join(lines), buttons=[[Button.inline("« Menu", b"menu")]],
@@ -1621,7 +1690,7 @@ async def cb(e):
                           "action": s["camp_action"], "opts": s["camp_opts"]})
         save_scheduled()
         reset(uid)
-        return await e.edit(f"{PremiumEmojis.CONFIRM} **Scheduled!**", buttons=[[Button.inline("« Menu", b"menu")]])
+        return await e.edit(f"{Emojis.CONFIRM} **Scheduled!**", buttons=[[Button.inline("« Menu", b"menu")]])
 
 # ==========================================================
 #  TEXT STEP HANDLER
@@ -1652,7 +1721,7 @@ async def steps(e):
         s["phone_code_hash"] = sent.phone_code_hash
         s["client"] = client
         s["step"] = "add_phone_otp"
-        return await e.reply(f"{PremiumEmojis.CONFIRM} Code sent! Send OTP (e.g. `1 2 3 4 5 6`)", parse_mode="md")
+        return await e.reply(f"{Emojis.CONFIRM} Code sent! Send OTP (e.g. `1 2 3 4 5 6`)", parse_mode="md")
 
     if step == "add_phone_otp":
         client = s.get("client")
@@ -1669,10 +1738,10 @@ async def steps(e):
             return await e.reply("❌ Code expired. /start")
         except SessionPasswordNeededError:
             s["step"] = "add_phone_password"
-            return await e.reply(f"{PremiumEmojis.LOCK} 2FA enabled. Send password:", parse_mode="md")
+            return await e.reply(f"{Emojis.LOCK} 2FA enabled. Send password:", parse_mode="md")
         acc = await save_session_account(client, uid)
         reset(uid)
-        return await e.reply(f"{PremiumEmojis.CONFIRM} Added `{acc['phone']}` — {acc['name']}",
+        return await e.reply(f"{Emojis.CONFIRM} Added `{acc['phone']}` — {acc['name']}",
                              buttons=MAIN_MENU, parse_mode="md")
 
     if step == "add_phone_password":
@@ -1683,7 +1752,7 @@ async def steps(e):
             return await e.reply(f"❌ Wrong password: {ex}\nTry again:")
         acc = await save_session_account(client, uid)
         reset(uid)
-        return await e.reply(f"{PremiumEmojis.CONFIRM} Added `{acc['phone']}`", buttons=MAIN_MENU, parse_mode="md")
+        return await e.reply(f"{Emojis.CONFIRM} Added `{acc['phone']}`", buttons=MAIN_MENU, parse_mode="md")
 
     if step == "add_string_input":
         try:
@@ -1691,7 +1760,7 @@ async def steps(e):
         except Exception as ex:
             return await e.reply(f"❌ {ex}\nSend a valid string:")
         reset(uid)
-        return await e.reply(f"{PremiumEmojis.CONFIRM} Added `{acc['phone']}` — {acc['name']}",
+        return await e.reply(f"{Emojis.CONFIRM} Added `{acc['phone']}` — {acc['name']}",
                              buttons=MAIN_MENU, parse_mode="md")
 
     if step == "bulk_input":
@@ -1704,7 +1773,7 @@ async def steps(e):
             except Exception as ex:
                 bad.append(str(ex)[:60])
         reset(uid)
-        msg = f"{PremiumEmojis.CONFIRM} {added} sessions added."
+        msg = f"{Emojis.CONFIRM} {added} sessions added."
         if bad:
             msg += f"\n❌ {len(bad)} failed:\n" + "\n".join(f"· {b}" for b in bad[:10])
         return await e.reply(msg, buttons=MAIN_MENU, parse_mode="md")
@@ -1723,7 +1792,7 @@ async def steps(e):
         if os.path.exists(p):
             os.remove(p)
         reset(uid)
-        return await e.reply(f"{PremiumEmojis.CLEAR} Removed `{phone}`", buttons=MAIN_MENU, parse_mode="md")
+        return await e.reply(f"{Emojis.CLEAR} Removed `{phone}`", buttons=MAIN_MENU, parse_mode="md")
 
     if step == "set":
         m = re.fullmatch(r"([\d.]+)\s*-\s*([\d.]+)", text)
@@ -1733,7 +1802,7 @@ async def steps(e):
         st["delay_min"], st["delay_max"] = float(m.group(1)), float(m.group(2))
         save_settings()
         reset(uid)
-        return await e.reply(f"{PremiumEmojis.CONFIRM} Delay set: `{st['delay_min']}`–`{st['delay_max']}`s",
+        return await e.reply(f"{Emojis.CONFIRM} Delay set: `{st['delay_min']}`–`{st['delay_max']}`s",
                              buttons=MAIN_MENU, parse_mode="md")
 
     # ── Campaign steps ──
@@ -1763,7 +1832,7 @@ async def steps(e):
         if parsed[0][0] == "c":
             s["step"] = "camp_private_invite"
             return await e.reply(
-                f"{PremiumEmojis.LOCK} **{fancy('PRIVATE CHANNEL DETECTED')}**\n\n"
+                f"{Emojis.LOCK} **{fancy_bold('PRIVATE CHANNEL DETECTED')}**\n\n"
                 "This post is inside a private channel. Accounts must be members "
                 "to react/vote.\n\n"
                 "📩 **Send the channel's invite link** now:\n"
@@ -1807,7 +1876,7 @@ async def steps(e):
         total_accs = len(accs)
         btn_rows.append([Button.inline("« Cancel", b"menu")])
         return await e.reply(
-            f"🔢 **{fancy('HOW MANY ACCOUNTS?')}**\n\nAvailable: **{total_accs}**\n"
+            f"🔢 **{fancy_bold('HOW MANY ACCOUNTS?')}**\n\nAvailable: **{total_accs}**\n"
             f"`0` = All available{preview}",
             buttons=btn_rows, parse_mode="md")
 
@@ -1816,7 +1885,7 @@ async def steps(e):
         if text.lower() in ("skip", "no", "already"):
             s["step"] = "camp_count"
             return await e.reply(
-                f"🔢 **{fancy('HOW MANY ACCOUNTS?')}**\n\n"
+                f"🔢 **{fancy_bold('HOW MANY ACCOUNTS?')}**\n\n"
                 f"Available: **{len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))}**\n"
                 "`0` = All available\n\n⚠️ Without an invite link, only accounts that are "
                 "ALREADY members can react/vote.",
@@ -1832,7 +1901,7 @@ async def steps(e):
         s["camp_opts"]["join_target"] = ("invite", m.group(1))
         s["step"] = "camp_count"
         return await e.reply(
-            f"{PremiumEmojis.CONFIRM} **{fancy('JOIN + ACT MODE ENABLED')}**\n\n"
+            f"{Emojis.CONFIRM} **{fancy_bold('JOIN + ACT MODE ENABLED')}**\n\n"
             "During the campaign, every account will:\n"
             "1️⃣ Join the private channel (invite link)\n"
             "2️⃣ Wait for sync\n"
@@ -1850,7 +1919,7 @@ async def steps(e):
         if action in TIMER_ACTIONS:
             s["step"] = "camp_timer"
             return await e.reply(
-                f"{PremiumEmojis.TIMER} **{fancy('SET TIMER')}**\n\n"
+                f"{Emojis.TIMER} **{fancy_bold('SET TIMER')}**\n\n"
                 "Time gap **between each account**:\n"
                 "`10` → 10 seconds\n`1m` → 1 minute\n`2m` → 2 minutes\n`0` → No timer (instant)\n\n"
                 "💡 Example: `1m` with 50 accounts = 1 request every minute, "
@@ -1876,7 +1945,7 @@ async def steps(e):
             if s["camp_opts"].get("btn_index") or s["camp_opts"].get("btn_text"):
                 return await ask_run(e, uid)
             s["step"] = "camp_btn"
-            return await e.reply(f"{PremiumEmojis.VOTE} Button number/text: `1` / `Vote Now`", parse_mode="md")
+            return await e.reply(f"{Emojis.VOTE} Button number/text: `1` / `Vote Now`", parse_mode="md")
         return await ask_run(e, uid)
 
     if step == "camp_btn":
@@ -1906,13 +1975,13 @@ async def steps(e):
 
         if s["camp_action"] == "dm":
             s["step"] = "camp_dm_text"
-            return await e.reply(f"{PremiumEmojis.REQUEST} **Send the DM message** you want to send:", parse_mode="md")
+            return await e.reply(f"{Emojis.REQUEST} **Send the DM message** you want to send:", parse_mode="md")
 
         if s["camp_action"] in ("join", "join_request", "leave"):
             s["step"] = "camp_count"
             total_accs = len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))
             return await e.reply(
-                f"🔢 **{fancy('HOW MANY ACCOUNTS?')}**\n\nAvailable: **{total_accs}**\n`0` = All available",
+                f"🔢 **{fancy_bold('HOW MANY ACCOUNTS?')}**\n\nAvailable: **{total_accs}**\n`0` = All available",
                 parse_mode="md")
 
         return await ask_run(e, uid)
@@ -1922,7 +1991,7 @@ async def steps(e):
         s["step"] = "camp_count"
         total_accs = len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))
         return await e.reply(
-            f"🔢 **{fancy('HOW MANY ACCOUNTS?')}**\n\nAvailable: **{total_accs}**\n`0` = All available",
+            f"🔢 **{fancy_bold('HOW MANY ACCOUNTS?')}**\n\nAvailable: **{total_accs}**\n`0` = All available",
             parse_mode="md")
 
     if step == "sched_time":
@@ -1933,7 +2002,7 @@ async def steps(e):
         s["sched_delay"] = int(m.group(1)) * mult
         label = dict(ACTIONS).get(s["camp_action"], s["camp_action"])
         return await e.reply(f"📅 **{label}** in **{text}**. Confirm?",
-                             buttons=[[styled_btn(f"{PremiumEmojis.CONFIRM} Confirm", b"do_schedule", "success")],
+                             buttons=[[styled_btn(f"{Emojis.CONFIRM} Confirm", b"do_schedule", "success")],
                                       [Button.inline("❌ Cancel", b"menu")]])
 
 # ── Timer "No Timer" button ──
@@ -1959,16 +2028,16 @@ async def camp_next(e, uid):
     if action == "dm":
         if "target" not in s["camp_opts"]:
             s["step"] = "camp_target"
-            return await e.reply(f"{PremiumEmojis.REQUEST} **Send username or user ID:**\n\n`@username` or `123456789`", parse_mode="md")
+            return await e.reply(f"{Emojis.REQUEST} **Send username or user ID:**\n\n`@username` or `123456789`", parse_mode="md")
         if "dm_text" not in s["camp_opts"]:
             s["step"] = "camp_dm_text"
-            return await e.reply(f"{PremiumEmojis.REQUEST} **Send the DM message** you want to send:", parse_mode="md")
+            return await e.reply(f"{Emojis.REQUEST} **Send the DM message** you want to send:", parse_mode="md")
         return await ask_run(e, uid)
 
     if action in ("react", "react_vote", "react_vote_view"):
         s["step"] = None
         return await e.reply(
-            f"{PremiumEmojis.STAR} **{fancy('REACTION TYPE')}**",
+            f"{Emojis.STAR} **{fancy_bold('REACTION TYPE')}**",
             buttons=[[styled_btn("🎯 Specific Emoji", b"react_specific", "primary")],
                      [styled_btn("🎲 Random Emoji", b"react_random", "success")],
                      [Button.inline("« Cancel", b"menu")]])
@@ -1978,13 +2047,13 @@ async def camp_next(e, uid):
             return await ask_run(e, uid)
         s["step"] = "camp_btn"
         return await e.reply(
-            f"{PremiumEmojis.VOTE} Send the button **number** or **text**:\n`1` / `Vote Now`\n\n"
+            f"{Emojis.VOTE} Send the button **number** or **text**:\n`1` / `Vote Now`\n\n"
             "💡 (If buttons were shown above, just click one.)", parse_mode="md")
 
     if action == "poll_vote":
         s["step"] = "camp_poll_options"
         return await e.reply(
-            f"{PremiumEmojis.CHART} Send poll option numbers (comma separated):\n`0,1,2`\n(0 = first option)",
+            f"{Emojis.CHART} Send poll option numbers (comma separated):\n`0,1,2`\n(0 = first option)",
             parse_mode="md")
 
     return await ask_run(e, uid)
@@ -1995,7 +2064,7 @@ async def ask_run(e, uid):
     label = dict(ACTIONS).get(s["camp_action"], s["camp_action"])
     opts = s.get("camp_opts", {})
 
-    summary = f"🚀 **{fancy('CAMPAIGN READY')}**\n\nAction: **{label}**\n"
+    summary = f"🚀 **{fancy_bold('CAMPAIGN READY')}**\n\nAction: **{label}**\n"
     if "post_ref" in opts:
         summary += f"Post ID: `{opts['msg_id']}`\n"
     if "join_target" in opts:
@@ -2008,7 +2077,7 @@ async def ask_run(e, uid):
         else:
             summary += f"Accounts: **{min(count, total_accs)}**\n"
     if "timer" in opts and opts["timer"] > 0:
-        summary += (f"{PremiumEmojis.TIMER} Timer: **{fmt_timer(opts['timer'])}** "
+        summary += (f"{Emojis.TIMER} Timer: **{fmt_timer(opts['timer'])}** "
                     f"between accounts\n")
     if "emoji" in opts:
         emoji_display = "🎲 Random" if opts['emoji'].lower() in ("random", "rand", "r", "🍀") else opts['emoji']
