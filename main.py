@@ -92,33 +92,14 @@ async def send(e, text, **kw):
         f = e.respond
     return await f(text, **kw)
 
-def styled_btn(text, data, style=None, emoji_id=None):
+# ==========================================================
+#  STYLED BUTTON FUNCTION - COLOURS + UNICODE EMOJIS
+# ==========================================================
+
+def styled_btn(text, data, style=None):
     """
-    Colored inline button with premium emoji support
-    Auto fallback if not supported
+    Colored inline button with unicode emojis
     """
-    # Try premium emoji if supported
-    if emoji_id and HAS_PREMIUM_BUTTONS:
-        try:
-            btn_style = None
-            if HAS_BTN_STYLE and style:
-                flag_map = {
-                    "primary": dict(bg_primary=True),
-                    "success": dict(bg_success=True),
-                    "danger": dict(bg_danger=True),
-                }
-                btn_style = KeyboardButtonStyle(**flag_map[style])
-            
-            return KeyboardButtonCallback(
-                text=text,
-                data=data if isinstance(data, bytes) else data.encode(),
-                emoji=emoji_id,
-                style=btn_style
-            )
-        except Exception:
-            pass
-    
-    # Normal button with color (fallback)
     if HAS_BTN_STYLE and style:
         flag_map = {
             "primary": dict(bg_primary=True),
@@ -133,20 +114,14 @@ def styled_btn(text, data, style=None, emoji_id=None):
             )
         except TypeError:
             pass
-    
     return Button.inline(text, data)
 
-def premium_btn(text, data, emoji_key, style=None):
-    """Premium button with color support"""
-    emoji_id = PremiumEmojis.BUTTON_EMOJIS.get(emoji_key)
-    return styled_btn(text, data, style, emoji_id)
-
 # ==========================================================
-#  PREMIUM EMOJIS - COMPLETE
+#  PREMIUM EMOJIS - UNICODE + REACTION IDs
 # ==========================================================
 
 class PremiumEmojis:
-    # 🎯 BUTTON ICONS - Display Characters (Unicode fallback)
+    # 🎯 BUTTON ICONS - Unicode Emojis (100% Working)
     VOTE = "🎯"
     JOIN = "✨"
     CANCEL = "🚫"
@@ -173,36 +148,7 @@ class PremiumEmojis:
     CLOCK = "⏰"
     TIMER = "⏱️"
 
-    # 🎯 BUTTON EMOJI IDs (Premium - Telegram Bot API 7.0+)
-    BUTTON_EMOJIS = {
-        "VOTE": "6240085923397114865",
-        "JOIN": "6240003971126139705",
-        "CANCEL": "6082294352564983391",
-        "MAIN_MENU": "6086784551894389168",
-        "BACK": "5271962619425599462",
-        "CREATE": "5188481279963715781",
-        "CONNECT": "6237622209897044583",
-        "MANAGE": "6082160779082077008",
-        "ADMIN": "6332246180583447893",
-        "STATS": "5177256464539976338",
-        "SETTINGS": "5388725162247992600",
-        "CLEAR": "5278491193053822590",
-        "CHANNEL": "6095891759462617671",
-        "CONFIRM": "6082554958295602218",
-        "CHART": "5282950412784117735",
-        "CROWN": "6332246180583447893",
-        "ALERT": "6237622209897044583",
-        "SEARCH": "6237774947524025498",
-        "SPEAKER": "6095891759462617671",
-        "LOCK": "5429405838345265327",
-        "ID": "6327736971728788025",
-        "STAR": "6239815031219820750",
-        "REQUEST": "5285184156555306745",
-        "CLOCK": "5787488119490088755",
-        "TIMER": "5299010592583988002",
-    }
-
-    # ⭐ REACTION EMOJIS (Premium - Sirf reactions ke liye)
+    # ⭐ REACTION EMOJIS - Premium IDs (Sirf reactions ke liye)
     REACTION_EMOJIS = {
         "❤️‍🔥": "6082544779223110894",
         "🌟": "6086784551894389168",
@@ -1064,7 +1010,7 @@ async def scheduler_loop(bot):
         await asyncio.sleep(5)
 
 # ==========================================================
-#  BOT SETUP - FULLY PREMIUM
+#  BOT SETUP
 # ==========================================================
 
 bot = TelegramClient(
@@ -1072,7 +1018,7 @@ bot = TelegramClient(
     config.API_ID, config.API_HASH
 ).start(bot_token=config.BOT_TOKEN)
 
-# ── ACTIONS WITH PREMIUM ICONS ──
+# ── ACTIONS WITH UNICODE EMOJIS ──
 ACTIONS = [
     ("react", f"{PremiumEmojis.STAR} React"),
     ("unreact", f"{PremiumEmojis.CLEAR} Remove Reaction"),
@@ -1089,19 +1035,20 @@ ACTIONS = [
     ("dm", f"{PremiumEmojis.SPEAKER} DM"),
 ]
 
+# ── MAIN MENU - UNICODE EMOJIS + COLOURS ──
 MAIN_MENU = [
-    [styled_btn("My Account", b"myacc", "primary", PremiumEmojis.BUTTON_EMOJIS.get("ID")),
-     styled_btn("Add Account", b"add", "success", PremiumEmojis.BUTTON_EMOJIS.get("JOIN"))],
-    [styled_btn("New Campaign", b"camp", "primary", PremiumEmojis.BUTTON_EMOJIS.get("CREATE")),
-     styled_btn("My Campaigns", b"mycamp", "success", PremiumEmojis.BUTTON_EMOJIS.get("CHART"))],
-    [styled_btn("Running", b"running", "primary", PremiumEmojis.BUTTON_EMOJIS.get("CLOCK")),
-     styled_btn("My Status", b"mystat", "success", PremiumEmojis.BUTTON_EMOJIS.get("STATS"))],
-    [styled_btn("Settings", b"set", "primary", PremiumEmojis.BUTTON_EMOJIS.get("SETTINGS")),
-     styled_btn("Owner Panel", b"owner_panel", "danger", PremiumEmojis.BUTTON_EMOJIS.get("ADMIN"))],
-    [styled_btn("Leave Channel", b"leave_menu", "danger", PremiumEmojis.BUTTON_EMOJIS.get("CANCEL")),
-     styled_btn("Help", b"help", "primary", PremiumEmojis.BUTTON_EMOJIS.get("SEARCH"))],
-    [styled_btn("Remove Account", b"remove_acc", "danger", PremiumEmojis.BUTTON_EMOJIS.get("CLEAR"))],
-    [Button.url(f" Support", f"https://t.me/{SUPPORT_BOT}")],
+    [styled_btn("🆔 My Account", b"myacc", "primary"),
+     styled_btn("✨ Add Account", b"add", "success")],
+    [styled_btn("🚀 New Campaign", b"camp", "primary"),
+     styled_btn("📊 My Campaigns", b"mycamp", "success")],
+    [styled_btn("⏰ Running", b"running", "primary"),
+     styled_btn("📈 My Status", b"mystat", "success")],
+    [styled_btn("⚙️ Settings", b"set", "primary"),
+     styled_btn("👑 Owner Panel", b"owner_panel", "danger")],
+    [styled_btn("🚫 Leave Channel", b"leave_menu", "danger"),
+     styled_btn("👁️ Help", b"help", "primary")],
+    [styled_btn("🧹 Remove Account", b"remove_acc", "danger")],
+    [Button.url(f"🤖 Support", f"https://t.me/{SUPPORT_BOT}")],
 ]
 
 # ── MENU TEXT - AESTHETIC ──
