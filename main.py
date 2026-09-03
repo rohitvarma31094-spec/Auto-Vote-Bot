@@ -115,10 +115,10 @@ def styled_btn(text, data, style=None, emoji_id=None):
                 emoji=emoji_id,
                 style=btn_style
             )
-        except Exception as e:
-            print(f"[button] Premium emoji failed: {e}")
+        except Exception:
+            pass
     
-    # Normal button (fallback)
+    # Normal button with color (fallback)
     if HAS_BTN_STYLE and style:
         flag_map = {
             "primary": dict(bg_primary=True),
@@ -129,13 +129,15 @@ def styled_btn(text, data, style=None, emoji_id=None):
             return KeyboardButtonCallback(
                 text,
                 data if isinstance(data, bytes) else data.encode(),
-                style=KeyboardButtonStyle(**flag_map[style]))
+                style=KeyboardButtonStyle(**flag_map[style])
+            )
         except TypeError:
             pass
+    
     return Button.inline(text, data)
 
 def premium_btn(text, data, emoji_key, style=None):
-    """Premium button with auto fallback"""
+    """Premium button with color support"""
     emoji_id = PremiumEmojis.BUTTON_EMOJIS.get(emoji_key)
     return styled_btn(text, data, style, emoji_id)
 
@@ -172,33 +174,33 @@ class PremiumEmojis:
     TIMER = "⏱️"
 
     # 🎯 BUTTON EMOJI IDs (for premium buttons)
-    BUTTON_EMOJIS = {
-        "VOTE": "6240085923397114865",
-        "JOIN": "6240003971126139705",
-        "CANCEL": "6082294352564983391",
-        "MAIN_MENU": "6086784551894389168",
-        "BACK": "5271962619425599462",
-        "CREATE": "5188481279963715781",
-        "CONNECT": "6237622209897044583",
-        "MANAGE": "6082160779082077008",
-        "ADMIN": "6332246180583447893",
-        "STATS": "5177256464539976338",
-        "SETTINGS": "5388725162247992600",
-        "CLEAR": "5278491193053822590",
-        "CHANNEL": "6095891759462617671",
-        "CONFIRM": "6082554958295602218",
-        "CHART": "5282950412784117735",
-        "CROWN": "6332246180583447893",
-        "ALERT": "6237622209897044583",
-        "SEARCH": "6237774947524025498",
-        "SPEAKER": "6095891759462617671",
-        "LOCK": "5429405838345265327",
-        "ID": "6327736971728788025",
-        "STAR": "6239815031219820750",
-        "REQUEST": "5285184156555306745",
-        "CLOCK": "5787488119490088755",
-        "TIMER": "5299010592583988002",
-    }
+PremiumEmojis.BUTTON_EMOJIS = {
+    "VOTE": "6240085923397114865",      # 🎯
+    "JOIN": "6240003971126139705",      # ✨
+    "CANCEL": "6082294352564983391",    # 🚫
+    "MAIN_MENU": "6086784551894389168", # 🌟
+    "BACK": "5271962619425599462",      # ⬅️
+    "CREATE": "5188481279963715781",    # 🚀
+    "CONNECT": "6237622209897044583",   # ⛓️
+    "MANAGE": "6082160779082077008",    # 💀
+    "ADMIN": "6332246180583447893",     # 👑
+    "STATS": "5177256464539976338",     # 📊
+    "SETTINGS": "5388725162247992600",  # ⚙️
+    "CLEAR": "5278491193053822590",     # 🧹
+    "CHANNEL": "6095891759462617671",   # 📡
+    "CONFIRM": "6082554958295602218",   # ✅
+    "CHART": "5282950412784117735",     # 📈
+    "CROWN": "6332246180583447893",     # 👑
+    "ALERT": "6237622209897044583",     # ⚠️
+    "SEARCH": "6237774947524025498",    # 👁️
+    "SPEAKER": "6095891759462617671",   # 📢
+    "LOCK": "5429405838345265327",      # 🔒
+    "ID": "6327736971728788025",        # 🤔
+    "STAR": "6239815031219820750",      # ⭐
+    "REQUEST": "5285184156555306745",   # 💌
+    "CLOCK": "5787488119490088755",     # ⏰
+    "TIMER": "5299010592583988002",     # ⏱️
+}
 
     # ⭐ REACTION EMOJIS
     REACTION_EMOJIS = {
@@ -1087,20 +1089,19 @@ ACTIONS = [
     ("dm", f"{PremiumEmojis.SPEAKER} DM"),
 ]
 
-# ── MAIN MENU - FULLY PREMIUM ──
 MAIN_MENU = [
-    [premium_btn("My Account", b"myacc", "ID", "primary"),
-     premium_btn("Add Account", b"add", "JOIN", "success")],
-    [premium_btn("New Campaign", b"camp", "CREATE", "primary"),
-     premium_btn("My Campaigns", b"mycamp", "CHART", "success")],
-    [premium_btn("Running", b"running", "CLOCK", "primary"),
-     premium_btn("My Status", b"mystat", "STATS", "success")],
-    [premium_btn("Settings", b"set", "SETTINGS", "primary"),
-     premium_btn("Owner Panel", b"owner_panel", "ADMIN", "danger")],
-    [premium_btn("Leave Channel", b"leave_menu", "CANCEL", "danger"),
-     premium_btn("Help", b"help", "SEARCH", "primary")],
-    [premium_btn("Remove Account", b"remove_acc", "CLEAR", "danger")],
-    [Button.url(f"🤖 Support", f"https://t.me/{SUPPORT_BOT}")],
+    [styled_btn("My Account", b"myacc", "primary", PremiumEmojis.BUTTON_EMOJIS.get("ID")),
+     styled_btn("Add Account", b"add", "success", PremiumEmojis.BUTTON_EMOJIS.get("JOIN"))],
+    [styled_btn("New Campaign", b"camp", "primary", PremiumEmojis.BUTTON_EMOJIS.get("CREATE")),
+     styled_btn("My Campaigns", b"mycamp", "success", PremiumEmojis.BUTTON_EMOJIS.get("CHART"))],
+    [styled_btn("Running", b"running", "primary", PremiumEmojis.BUTTON_EMOJIS.get("CLOCK")),
+     styled_btn("My Status", b"mystat", "success", PremiumEmojis.BUTTON_EMOJIS.get("STATS"))],
+    [styled_btn("Settings", b"set", "primary", PremiumEmojis.BUTTON_EMOJIS.get("SETTINGS")),
+     styled_btn("Owner Panel", b"owner_panel", "danger", PremiumEmojis.BUTTON_EMOJIS.get("ADMIN"))],
+    [styled_btn("Leave Channel", b"leave_menu", "danger", PremiumEmojis.BUTTON_EMOJIS.get("CANCEL")),
+     styled_btn("Help", b"help", "primary", PremiumEmojis.BUTTON_EMOJIS.get("SEARCH"))],
+    [styled_btn("Remove Account", b"remove_acc", "danger", PremiumEmojis.BUTTON_EMOJIS.get("CLEAR"))],
+    [Button.url(f" Support", f"https://t.me/{SUPPORT_BOT}")],
 ]
 
 # ── MENU TEXT - AESTHETIC ──
