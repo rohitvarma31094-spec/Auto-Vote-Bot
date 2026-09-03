@@ -53,8 +53,20 @@ LOCK = threading.Lock()
 #  CREDITS
 # ==========================================================
 
-CREDIT_BOT = "Aetherhu_bot"
-DEVELOPER  = "Yuvan_27k"
+SUPPORT_BOT = "Aetherhu_bot"     # Support button → opens this bot
+
+# Check Telethon version for premium button support
+try:
+    import telethon
+    from telethon.tl.types import KeyboardButtonCallback
+    import inspect
+    sig = inspect.signature(KeyboardButtonCallback.__init__)
+    HAS_PREMIUM_BUTTONS = 'emoji' in sig.parameters
+    print(f"[VoteFlow] Telethon version: {telethon.__version__}")
+    print(f"[VoteFlow] Premium button support: {HAS_PREMIUM_BUTTONS}")
+except Exception:
+    HAS_PREMIUM_BUTTONS = False
+    print(f"[VoteFlow] Premium button support: ❌")
 
 # Actions jinke beech TIMER chalega
 TIMER_ACTIONS = ("react", "react_vote", "react_vote_view", "vote",
@@ -80,7 +92,24 @@ async def send(e, text, **kw):
         f = e.respond
     return await f(text, **kw)
 
-def styled_btn(text, data, style=None):
+def styled_btn(text, data, style=None, emoji_id=None):
+    """
+    Colored inline button with premium emoji support
+    Auto fallback if not supported
+    """
+    # Try premium emoji if supported
+    if emoji_id and HAS_PREMIUM_BUTTONS:
+        try:
+            return KeyboardButtonCallback(
+                text=text,
+                data=data if isinstance(data, bytes) else data.encode(),
+                emoji=emoji_id,
+                style=KeyboardButtonStyle(**{"bg_primary": True}) if HAS_BTN_STYLE and style else None
+            )
+        except Exception:
+            pass
+    
+    # Normal button
     if HAS_BTN_STYLE and style:
         flag_map = {
             "primary": dict(bg_primary=True),
@@ -96,37 +125,71 @@ def styled_btn(text, data, style=None):
             pass
     return Button.inline(text, data)
 
+def premium_btn(text, data, emoji_key, style=None):
+    """Premium button with auto fallback"""
+    emoji_id = PremiumEmojis.BUTTON_EMOJIS.get(emoji_key)
+    return styled_btn(text, data, style, emoji_id)
+
 # ==========================================================
-#  PREMIUM EMOJIS - 100% COMPLETE
+#  PREMIUM EMOJIS - COMPLETE
 # ==========================================================
 
 class PremiumEmojis:
-    # 🎯 BUTTON ICONS - ALL PREMIUM
-    VOTE = "🎯"              # 6240085923397114865
-    JOIN = "✨"              # 6240003971126139705
-    CANCEL = "🚫"           # 6082294352564983391
-    MAIN_MENU = "🌟"        # 6086784551894389168
-    BACK = "⬅️"             # 5271962619425599462
-    CREATE = "🚀"           # 5188481279963715781
-    CONNECT = "⛓️"          # 6237622209897044583
-    MANAGE = "💀"           # 6082160779082077008
-    ADMIN = "👑"            # 6332246180583447893
-    STATS = "📊"            # 5177256464539976338
-    SETTINGS = "⚙️"        # 5388725162247992600
-    CLEAR = "🧹"            # 5278491193053822590
-    CHANNEL = "📡"          # 6095891759462617671
-    CONFIRM = "✅"          # 6082554958295602218
-    CHART = "📈"            # 5282950412784117735
-    CROWN = "👑"            # 6332246180583447893
-    ALERT = "⚠️"            # 6237622209897044583
-    SEARCH = "👁️"           # 6237774947524025498
-    SPEAKER = "📢"          # 6095891759462617671
-    LOCK = "🔒"             # 5429405838345265327
-    ID = "🤔"               # 6327736971728788025
-    STAR = "⭐"             # 6239815031219820750
-    REQUEST = "💌"          # 5285184156555306745
-    CLOCK = "⏰"            # 5787488119490088755
-    TIMER = "⏱️"           # 5299010592583988002
+    # 🎯 BUTTON ICONS - Display Characters
+    VOTE = "🎯"
+    JOIN = "✨"
+    CANCEL = "🚫"
+    MAIN_MENU = "🌟"
+    BACK = "⬅️"
+    CREATE = "🚀"
+    CONNECT = "⛓️"
+    MANAGE = "💀"
+    ADMIN = "👑"
+    STATS = "📊"
+    SETTINGS = "⚙️"
+    CLEAR = "🧹"
+    CHANNEL = "📡"
+    CONFIRM = "✅"
+    CHART = "📈"
+    CROWN = "👑"
+    ALERT = "⚠️"
+    SEARCH = "👁️"
+    SPEAKER = "📢"
+    LOCK = "🔒"
+    ID = "🤔"
+    STAR = "⭐"
+    REQUEST = "💌"
+    CLOCK = "⏰"
+    TIMER = "⏱️"
+
+    # 🎯 BUTTON EMOJI IDs (for premium buttons)
+    BUTTON_EMOJIS = {
+        "VOTE": "6240085923397114865",
+        "JOIN": "6240003971126139705",
+        "CANCEL": "6082294352564983391",
+        "MAIN_MENU": "6086784551894389168",
+        "BACK": "5271962619425599462",
+        "CREATE": "5188481279963715781",
+        "CONNECT": "6237622209897044583",
+        "MANAGE": "6082160779082077008",
+        "ADMIN": "6332246180583447893",
+        "STATS": "5177256464539976338",
+        "SETTINGS": "5388725162247992600",
+        "CLEAR": "5278491193053822590",
+        "CHANNEL": "6095891759462617671",
+        "CONFIRM": "6082554958295602218",
+        "CHART": "5282950412784117735",
+        "CROWN": "6332246180583447893",
+        "ALERT": "6237622209897044583",
+        "SEARCH": "6237774947524025498",
+        "SPEAKER": "6095891759462617671",
+        "LOCK": "5429405838345265327",
+        "ID": "6327736971728788025",
+        "STAR": "6239815031219820750",
+        "REQUEST": "5285184156555306745",
+        "CLOCK": "5787488119490088755",
+        "TIMER": "5299010592583988002",
+    }
 
     # ⭐ REACTION EMOJIS
     REACTION_EMOJIS = {
@@ -1017,19 +1080,18 @@ ACTIONS = [
 
 # ── MAIN MENU - FULLY PREMIUM ──
 MAIN_MENU = [
-    [styled_btn(f"{PremiumEmojis.ID} My Account", b"myacc", "primary"),
-     styled_btn(f"{PremiumEmojis.JOIN} Add Account", b"add", "success")],
-    [styled_btn(f"{PremiumEmojis.CREATE} New Campaign", b"camp", "primary"),
-     styled_btn(f"{PremiumEmojis.CHART} My Campaigns", b"mycamp", "success")],
-    [styled_btn(f"{PremiumEmojis.CLOCK} Running", b"running", "primary"),
-     styled_btn(f"{PremiumEmojis.STATS} My Status", b"mystat", "success")],
-    [styled_btn(f"{PremiumEmojis.SETTINGS} Settings", b"set", "primary"),
-     styled_btn(f"{PremiumEmojis.ADMIN} Owner Panel", b"owner_panel", "danger")],
-    [styled_btn(f"{PremiumEmojis.CANCEL} Leave Channel", b"leave_menu", "danger"),
-     styled_btn(f"{PremiumEmojis.SEARCH} Help", b"help", "primary")],
-    [styled_btn(f"{PremiumEmojis.CLEAR} Remove Account", b"remove_acc", "danger")],
-    [Button.url(f"{PremiumEmojis.CONNECT} Support", f"https://t.me/{CREDIT_BOT}"),
-     Button.url(f"{PremiumEmojis.CROWN} Developer", f"https://t.me/{DEVELOPER}")],
+    [premium_btn("My Account", b"myacc", "ID", "primary"),
+     premium_btn("Add Account", b"add", "JOIN", "success")],
+    [premium_btn("New Campaign", b"camp", "CREATE", "primary"),
+     premium_btn("My Campaigns", b"mycamp", "CHART", "success")],
+    [premium_btn("Running", b"running", "CLOCK", "primary"),
+     premium_btn("My Status", b"mystat", "STATS", "success")],
+    [premium_btn("Settings", b"set", "SETTINGS", "primary"),
+     premium_btn("Owner Panel", b"owner_panel", "ADMIN", "danger")],
+    [premium_btn("Leave Channel", b"leave_menu", "CANCEL", "danger"),
+     premium_btn("Help", b"help", "SEARCH", "primary")],
+    [premium_btn("Remove Account", b"remove_acc", "CLEAR", "danger")],
+    [Button.url(f"🤖 Support", f"https://t.me/{SUPPORT_BOT}")],
 ]
 
 # ── MENU TEXT - AESTHETIC ──
@@ -1059,7 +1121,6 @@ def menu_text(uid):
         f"│  {PremiumEmojis.LOCK} Access: **{access_emoji} {access_text}**\n"
         f"└───────────────────────────────────────┘\n\n"
         f"✨ **{fancy('Auto Vote • React • Members • DM')}**\n"
-        f"👑 **Developed by** @{DEVELOPER}\n"
     )
 
     if is_owner(uid):
@@ -1101,8 +1162,7 @@ async def cmd_me(e):
         f"│  {PremiumEmojis.LOCK} Access: **{access_emoji} {access_text}**\n"
         f"│  📱 Accounts: **{total_accs}**\n"
         f"│  📊 Limit: **{get_user_limit(uid)}**\n"
-        f"└───────────────────────────────────────┘\n\n"
-        f"👑 **Developed by** @{DEVELOPER}",
+        f"└───────────────────────────────────────┘",
         parse_mode="md"
     )
 
@@ -1467,10 +1527,9 @@ async def cb(e):
             f"💡 **{fancy('Tips')}**\n"
             f"• Count `0` = All accounts\n"
             f"• Set delay `1-3` in Settings\n"
-            f"• Premium accounts get premium reactions!\n\n"
-            f"👑 **Developed by** @{DEVELOPER}",
+            f"• Premium accounts get premium reactions!\n",
             parse_mode="md",
-            buttons=[[Button.url(f"{PremiumEmojis.CONNECT} Support", f"https://t.me/{CREDIT_BOT}"),
+            buttons=[[Button.url(f"🤖 Support", f"https://t.me/{SUPPORT_BOT}"),
                       Button.inline("« Back", b"menu")]]
         )
 
@@ -2059,7 +2118,13 @@ async def txt_upload(e):
 async def main():
     load_scheduled()
 
-    print(f"[VoteFlow] Restoring ALL {len(accounts)} accounts from {config.ACCOUNTS_FILE} ...")
+    print(f"[VoteFlow] ========================================")
+    print(f"[VoteFlow] 🚀 VoteFlow Bot Starting...")
+    print(f"[VoteFlow] Telethon version: {__import__('telethon').__version__}")
+    print(f"[VoteFlow] Premium button support: {HAS_PREMIUM_BUTTONS}")
+    print(f"[VoteFlow] ========================================")
+
+    print(f"[VoteFlow] Restoring ALL {len(accounts)} accounts...")
     restored, failed = 0, 0
     for acc in accounts:
         try:
@@ -2079,15 +2144,20 @@ async def main():
 
     asyncio.create_task(scheduler_loop(bot))
 
-    print(f"[VoteFlow] Telethon version: {__import__('telethon').__version__}")
     print(f"[VoteFlow] Running. Accounts: {len(accounts)}, Admins: {len(admins)+1}, "
           f"Scheduled: {len(scheduled)}")
     print(f"[VoteFlow] Button colors supported: {HAS_BTN_STYLE}")
-    print(f"[VoteFlow] Loaded OWNER_IDS: {config.OWNER_IDS}")
-    print(f"[VoteFlow] Support bot: @{CREDIT_BOT} | Developer: @{DEVELOPER}")
-    print(f"[VoteFlow] Admin Limits active: {sum(1 for a in admins if a.get('limit', 0) > 0)}")
+    print(f"[VoteFlow] Premium button emoji: {'✅ YES' if HAS_PREMIUM_BUTTONS else '❌ NO (fallback)'}")
+    print(f"[VoteFlow] Support bot: @{SUPPORT_BOT}")
+    print(f"[VoteFlow] ========================================")
 
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
-    bot.loop.run_until_complete(main())
+    print("[VoteFlow] Starting bot...")
+    try:
+        bot.loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("[VoteFlow] Bot stopped by user")
+    except Exception as e:
+        print(f"[VoteFlow] Fatal error: {e}")
