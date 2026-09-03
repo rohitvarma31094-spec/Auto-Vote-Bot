@@ -54,6 +54,12 @@ TIMER_ACTIONS = ("react", "react_vote", "react_vote_view", "vote",
                  "unvote", "poll_vote", "join", "join_request")
 
 # ==========================================================
+#  BOT INITIALIZATION - FIXED
+# ==========================================================
+
+bot = TelegramClient('bot', config.API_ID, config.API_HASH).start(bot_token=config.BOT_TOKEN)
+
+# ==========================================================
 #  UNICODE EMOJIS  —  Premium IDs only for reactions
 # ==========================================================
 
@@ -134,7 +140,7 @@ def fancy(t: str) -> str:
     """Bold unicode converter."""
     _BOLD = str.maketrans(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-        "𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇"
+        "𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘻"
         "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭"
         "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
     )
@@ -1704,8 +1710,8 @@ async def ask_run(e, uid):
 
     summary += f"\n📊 Available: **{len(get_admin_accounts(uid) if is_admin(uid) else my_accounts(uid))}**"
 
-    await send(e, summary, parse_mode="md")
-    await send(e, "▶️ **Run now or schedule?**",
+    await e.reply(summary, parse_mode="md")
+    await e.reply("▶️ **Run now or schedule?**",
                buttons=[[styled_btn("▶️ Run Now", b"run_now", "success"),
                          styled_btn("📅 Schedule", b"schedule_btn", "primary")],
                         [Button.inline(f"{Emojis.CANCEL} Cancel", b"menu")]])
