@@ -100,21 +100,31 @@ def styled_btn(text, data, style=None, emoji_id=None):
     # Try premium emoji if supported
     if emoji_id and HAS_PREMIUM_BUTTONS:
         try:
+            # Style ko properly handle karein
+            btn_style = None
+            if HAS_BTN_STYLE and style:
+                flag_map = {
+                    "primary": dict(bg_primary=True),
+                    "success": dict(bg_success=True),
+                    "danger": dict(bg_danger=True),
+                }
+                btn_style = KeyboardButtonStyle(**flag_map[style])
+            
             return KeyboardButtonCallback(
                 text=text,
                 data=data if isinstance(data, bytes) else data.encode(),
                 emoji=emoji_id,
-                style=KeyboardButtonStyle(**{"bg_primary": True}) if HAS_BTN_STYLE and style else None
+                style=btn_style
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[button] Premium emoji failed: {e}")
     
-    # Normal button
+    # Normal button (fallback)
     if HAS_BTN_STYLE and style:
         flag_map = {
             "primary": dict(bg_primary=True),
             "success": dict(bg_success=True),
-            "danger":  dict(bg_danger=True),
+            "danger": dict(bg_danger=True),
         }
         try:
             return KeyboardButtonCallback(
