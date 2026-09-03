@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = ["python311", "gcc", "musl", "openssl"]
+
+[phases.install]
+cmds = [
+  "pip install -U pip",
+  "pip install --no-cache-dir -r requirements.txt",
+  "pip install --no-cache-dir -U telethon==1.34.0"
+]
+
+[phases.deploy]
+cmds = ["python main.py"]
+
+[start]
+cmd = "python main.py"
